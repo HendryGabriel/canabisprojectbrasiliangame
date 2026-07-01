@@ -12,7 +12,10 @@ caseiro, expande o terreno e automatiza tudo até virar uma **fábrica 100%
 automática** que imprime dinheiro. Arco de progressão: **residencial → industrial**.
 
 - **Gênero:** factory builder / automação (Factorio raiz) + cultivo (Stardew Valley).
-- **Câmera:** top-down 2D.
+- **Modo:** **single-player e coop** (o mesmo jogo suporta jogar sozinho ou em cooperação).
+- **Câmera e gráficos:** top-down 2D, visual e câmera **bem parecidos com Stardew Valley
+  e Factorio** (perspectiva de cima, mundo em tiles, máquinas/esteiras alinhadas ao grid).
+  **Não é pixelart** — arte com traço/ilustração mais limpo, não em pixels.
 - **Avatar:** sim — personagem controlável (Factorio clássico), movimento **livre em 8 direções**.
 - **Moeda central:** dinheiro. Camadas secundárias: metas de produção e pesquisa.
 - **Clímax:** marco de vitória (virar o maior produtor / se aposentar milionário) que
@@ -41,8 +44,8 @@ automática** que imprime dinheiro. Arco de progressão: **residencial → indus
 | 15 | Venda | **Doca física** (traficante no beco) alimentada por esteira |
 | 16 | Final | **Marco de vitória que não tranca** |
 | 17 | Processamento manual | **Tudo é bancada/máquina física no grid** (sem craft-na-mão abstrato) |
-| 18 | Arte | Sprites **fornecidos pelo desenvolvedor**; lógica separada do visual |
-| 19 | Modo | **Coop** |
+| 18 | Arte | Sprites **fornecidos pelo desenvolvedor**; **não é pixelart**; estilo Stardew/Factorio; lógica separada do visual |
+| 19 | Modo | **Single-player e coop** |
 | 20 | Rede | **Lockstep determinístico** (input-only) |
 
 ---
@@ -146,7 +149,15 @@ Cada máquina ocupa footprint real no grid com pontos de I/O posicionados.
 
 ## 9. Arquitetura técnica (crítico — coop)
 
-> A escolha de **coop com lockstep determinístico** define a fundação. Não é retrofitável.
+> O jogo é **single-player e coop**. A escolha de suportar **coop com lockstep
+> determinístico** define a fundação — e não é retrofitável, por isso é construída
+> desde o início mesmo pro single-player (single-player = lockstep com 1 jogador).
+
+**Estilo visual:** câmera e gráficos **bem parecidos com Stardew Valley e Factorio**
+(top-down, mundo em tiles, esteiras/máquinas no grid), mas **não em pixelart** — arte
+ilustrada/limpa. Como a lógica é separada do visual, o estilo é definido pelos sprites
+fornecidos, sem afetar a simulação.
+
 
 - **Simulação determinística própria**, em **passo fixo (fixed tick)**, usando
   **inteiros / ponto-fixo** — **nunca** a física/float do Godot (float diverge entre
