@@ -24,6 +24,12 @@ var _hover_lbl: Label
 var _drag_build := false
 var _drag_prev := Vector2i.ZERO
 var _drag_rem := false
+var _tutorial: Array = []   # passos {txt, ok:Callable} — avanca sozinho lendo a Sim
+var _tut_passo := 0
+var _tut_off := false
+var _tut_panel: PanelContainer
+var _tut_lbl: Label
+var _shop_aberto := false
 
 
 func _ready() -> void:
@@ -63,9 +69,21 @@ func _ready() -> void:
 	_shop_box.custom_minimum_size = Vector2(580, 0)
 	scroll.add_child(_shop_box)
 
+	_tut_panel = PanelContainer.new()
+	_tut_panel.position = Vector2(890, 40)
+	add_child(_tut_panel)
+	var tv := VBoxContainer.new()
+	_tut_panel.add_child(tv)
+	_tut_lbl = Label.new()
+	_tut_lbl.custom_minimum_size = Vector2(370, 0)
+	_tut_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_tut_lbl.add_theme_font_size_override("font_size", 14)
+	tv.add_child(_tut_lbl)
+	_monta_tutorial()
+
 	Sim.msg.connect(_on_msg)
 	Sim.vitoria_sig.connect(_on_vitoria)
-	_on_msg("Bem-vindo! Plante no quintal (canteiro na hotbar). E interage, R gira, botão direito remove.")
+	_on_msg("Bem-vindo! Você chegou de mudança. Siga o TUTORIAL à direita.")
 
 
 func _label(pos: Vector2, tam: int) -> Label:
@@ -89,6 +107,7 @@ func _process(delta: float) -> void:
 	_topo.text = "$ %d   |   Tier %d   |   %s   |   %d fps" % [Sim.money, Sim.tier, meta, Engine.get_frames_per_second()]
 	_dica_lbl.text = _dica()
 	_atualiza_hover()
+	_atualiza_tutorial()
 	var linhas := []
 	var chaves := Sim.inv.keys()
 	chaves.sort()
@@ -140,6 +159,8 @@ func _unhandled_input(ev: InputEvent) -> void:
 				toggle_shop()
 			KEY_Q:
 				build_type = ""
+			KEY_T:
+				_tut_off = not _tut_off
 			_:
 				# teclas 1-9,0 selecionam o slot da hotbar (aperta de novo = solta)
 				var idx := NUM_KEYS.find(ev.physical_keycode)
@@ -209,6 +230,7 @@ func _mouse_cell() -> Vector2i:
 func toggle_shop() -> void:
 	_shop.visible = not _shop.visible
 	if _shop.visible:
+		_shop_aberto = true
 		_monta_shop()
 
 
@@ -266,6 +288,66 @@ func _sep(texto: String) -> Label:
 	l.add_theme_font_size_override("font_size", 15)
 	l.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
 	return l
+
+
+# ---------------- tutorial (quests do inicio) ----------------
+
+func _monta_tutorial() -> void:
+	_tutorial = [
+		{"txt": "Ande com WASD ou as setas até o quintal (atrás da casa).",
+			"ok": func() -> bool: return Sim.player_cell != Vector2i(7, 10)},
+		{"txt": "Aperte Tab (ou E no PC da casa) pra abrir a loja. Você já tem 3 sementes de Ruderalis. Feche com Esc.",
+			"ok": func() -> bool: return _shop_aberto},
+		{"txt": "Coloque um Canteiro: aperte a tecla 2 e clique num tile de grama do quintal.",
+			"ok": func() -> bool: return _canteiro_fase(0)},
+		{"txt": "Plante: chegue perto do canteiro e aperte E.",
+			"ok": func() -> bool: return _canteiro_fase(1)},
+		{"txt": "A planta está SECA. Aperte E de novo pra regar.",
+			"ok": func() -> bool: return _canteiro_fase(2)},
+		{"txt": "Espere crescer (uns 10 segundos) e colha com E quando aparecer \"PRONTO\".",
+			"ok": func() -> bool: return _tem_prod("bud")},
+		{"txt": "Venda: leve os buds até o TRAFICANTE no beco escuro (à esquerda da casa) e aperte E.",
+			"ok": func() -> bool: return Sim.vendas.get("bud", 0) > 0},
+		{"txt": "Plante mais e junte 2 buds da mesma cepa. Na BANCADA da cozinha, segure E pra prensar (vale 2.6x mais!).",
+			"ok": func() -> bool: return _tem_prod("prensado")},
+		{"txt": "Agora escale: venda 20 buds pra cumprir a META (topo da tela) e destravar o Tier 1 — esteiras, máquinas e estufas!",
+			"ok": func() -> bool: return Sim.tier >= 1},
+		{"txt": "Tier 1! Coloque uma Máquina de Pura, ligue esteiras (arraste com o botão esquerdo) dela até o traficante, e alimente com buds. Fábrica começando!",
+			"ok": func() -> bool: return Sim.vendas.get("pura", 0) > 0},
+	]
+
+
+func _atualiza_tutorial() -> void:
+	if _tut_off or _tut_passo >= _tutorial.size():
+		_tut_panel.visible = false
+		return
+	_tut_panel.visible = true
+	var passo: Dictionary = _tutorial[_tut_passo]
+	if passo["ok"].call():
+		_tut_passo += 1
+		if _tut_passo >= _tutorial.size():
+			_on_msg("✓ Tutorial completo! Agora siga as METAS no topo da tela. Boa sorte!")
+		else:
+			_on_msg("✓ Passo concluído!")
+		return
+	_tut_lbl.text = "TUTORIAL — passo %d de %d\n\n%s\n\n(T esconde o tutorial)" % [_tut_passo + 1, _tutorial.size(), passo["txt"]]
+
+
+func _canteiro_fase(minimo: int) -> bool:
+	for id in Sim.ents:
+		var e: Dictionary = Sim.ents[id]
+		if e["t"] == "canteiro" and e["fase"] >= minimo:
+			return true
+	return false
+
+
+func _tem_prod(prod: String) -> bool:
+	if Sim.vendas.get(prod, 0) > 0:
+		return true
+	for k in Sim.inv:
+		if Defs.item_prod(k) == prod:
+			return true
+	return false
 
 
 # ---------------- hover: o que essa coisa esta fazendo? ----------------
@@ -380,6 +462,8 @@ func _dica() -> String:
 		return "DICA: sem luz! Venda algo pra pagar a conta na próxima cobrança"
 	if Sim.heat >= 70:
 		return "DICA: calor alto — pare de vender um pouco ou contrate o advogado no PC"
+	if _tut_passo < _tutorial.size() and not _tut_off:
+		return ""  # tutorial ativo ja guia; dica so pros avisos urgentes acima
 	var tem_canteiro := false
 	var seco := false
 	var pronto := false
