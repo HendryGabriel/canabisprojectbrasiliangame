@@ -74,9 +74,16 @@ func _anda(p: Vector2) -> bool:
 
 
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, 11, Color(0.95, 0.85, 0.65))
-	draw_circle(Vector2.ZERO, 11, Color.BLACK, false, 1.5)
-	draw_line(Vector2.ZERO, Vector2(facing) * 14, Color.BLACK, 2.0)
+	# bonequinho: sombra, corpo, cabeca, bone; olhos seguem a direcao
+	draw_circle(Vector2(0, 8), 8, Color(0, 0, 0, 0.3))
+	draw_rect(Rect2(-6, -4, 12, 13), Color(0.20, 0.45, 0.25), true)      # camisa
+	draw_rect(Rect2(-5, 7, 4, 5), Color(0.25, 0.25, 0.35), true)         # pernas
+	draw_rect(Rect2(1, 7, 4, 5), Color(0.25, 0.25, 0.35), true)
+	draw_circle(Vector2(0, -9), 7, Color(0.95, 0.80, 0.62))              # cabeca
+	draw_rect(Rect2(-7, -16, 14, 5), Color(0.60, 0.20, 0.20), true)      # bone
+	var f := Vector2(facing).normalized() * 2.5
+	draw_circle(Vector2(-2.5, -9) + f, 1.2, Color.BLACK)                 # olhos
+	draw_circle(Vector2(2.5, -9) + f, 1.2, Color.BLACK)
 	# realce da celula alvo de interacao
 	var alvo := _celula_alvo()
 	if _perto(alvo) and Sim.ent_em(alvo) != null:
