@@ -4,6 +4,7 @@ extends Node2D
 # sem tocar na simulacao.
 
 const TILE := 32
+const Icons := preload("res://src/icons.gd")
 
 # cor base por cepa (folha/bud/chip nas maquinas)
 const COR_CEPA := {
@@ -309,50 +310,8 @@ func _draw_maquina(e: Dictionary, px: Rect2) -> void:
 	_badge_saida(e, px)
 
 
-func _icone_maquina(t: String, c: Vector2, px: Rect2) -> void:
-	match t:
-		"maq_pura":     # folha grande
-			_draw_planta(c + Vector2(0, 9), 15.0, Color(0.55, 0.85, 0.40))
-		"maq_blend":    # duas setas se cruzando
-			draw_line(c + Vector2(-8, -6), c + Vector2(8, 6), Color.WHITE, 3.0)
-			draw_line(c + Vector2(-8, 6), c + Vector2(8, -6), Color(1, 0.8, 0.4), 3.0)
-		"maq_haxixe":   # tijolo marrom
-			draw_rect(Rect2(c - Vector2(9, 6), Vector2(18, 12)), Color(0.30, 0.18, 0.08), true)
-			draw_rect(Rect2(c - Vector2(9, 6), Vector2(18, 12)), Color(0.5, 0.35, 0.2), false, 1.5)
-		"maq_ice":      # floco de neve
-			for i in 3:
-				var ang := i * PI / 3
-				draw_line(c - Vector2(cos(ang), sin(ang)) * 9, c + Vector2(cos(ang), sin(ang)) * 9, Color.WHITE, 2.0)
-		"maq_cbd":      # gota + frasco
-			draw_circle(c + Vector2(0, 2), 6, Color(0.75, 0.95, 0.85))
-			draw_colored_polygon(PackedVector2Array([c + Vector2(0, -10), c + Vector2(-5, -1), c + Vector2(5, -1)]), Color(0.75, 0.95, 0.85))
-		"maq_baseado":  # cone de baseado
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-10, 6), c + Vector2(10, -2), c + Vector2(8, -6), c + Vector2(-10, 2)]), Color.WHITE)
-			draw_circle(c + Vector2(-10, 4), 2.5, Color.ORANGE)
-		"maq_semente":  # semente
-			draw_circle(c, 5, Color(0.45, 0.30, 0.15))
-			draw_circle(c + Vector2(1, -1), 2, Color(0.65, 0.50, 0.30))
-		"extrator_madeira":  # serra circular
-			draw_circle(c, 8, Color(0.75, 0.75, 0.78))
-			for i in 8:
-				var ang := i * PI / 4
-				draw_circle(c + Vector2(cos(ang), sin(ang)) * 8, 1.5, Color(0.55, 0.55, 0.58))
-		"fab_seda":     # folha de papel
-			draw_rect(Rect2(c - Vector2(6, 8), Vector2(12, 16)), Color.WHITE, true)
-			draw_line(c + Vector2(-3, -4), c + Vector2(3, -4), Color(0.6, 0.6, 0.6), 1.0)
-			draw_line(c + Vector2(-3, 0), c + Vector2(3, 0), Color(0.6, 0.6, 0.6), 1.0)
-		"fab_gelo":     # cubo de gelo
-			draw_rect(Rect2(c - Vector2(7, 7), Vector2(14, 14)), Color(0.80, 0.92, 1.0, 0.9), true)
-			draw_rect(Rect2(c - Vector2(7, 7), Vector2(14, 14)), Color.WHITE, false, 1.5)
-		"extrator_areia":  # pa
-			draw_line(c + Vector2(-4, 8), c + Vector2(2, -4), Color(0.5, 0.35, 0.2), 2.5)
-			draw_colored_polygon(PackedVector2Array([c + Vector2(0, -8), c + Vector2(7, -5), c + Vector2(2, -2)]), Color(0.7, 0.7, 0.75))
-		"fornalha":     # boca de fogo
-			draw_rect(Rect2(c - Vector2(8, 4), Vector2(16, 10)), Color(0.15, 0.10, 0.10), true)
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-5, 6), c + Vector2(0, -4), c + Vector2(5, 6)]), Color(1.0, 0.55, 0.10))
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-2, 6), c + Vector2(0, 0), c + Vector2(2, 6)]), Color(1.0, 0.85, 0.30))
-		_:
-			draw_string(_fonte, px.position + Vector2(4, px.size.y / 2), t, HORIZONTAL_ALIGNMENT_LEFT, px.size.x, 10, Color.WHITE)
+func _icone_maquina(t: String, c: Vector2, _px: Rect2) -> void:
+	Icons.desenha(self, t, c, 1.0, false)  # mesmo icone da hotbar, sem o chassi
 
 
 func _draw_bancada(e: Dictionary, px: Rect2) -> void:

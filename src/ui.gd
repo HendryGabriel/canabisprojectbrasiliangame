@@ -2,9 +2,13 @@ extends CanvasLayer
 # HUD + hotbar de construcao + loja do PC + mensagens + vitoria. Tudo em codigo.
 
 const TILE := 32
+const Icons := preload("res://src/icons.gd")
+
+const NUM_KEYS := [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0]
 
 var build_type := ""
 var rot := 1  # 0 N, 1 E, 2 S, 3 O
+var _slots_tipos: Array = []  # ordem dos predios na hotbar (p/ teclas 1-9,0)
 var _topo: Label
 var _inv_lbl: Label
 var _msg_lbl: Label
@@ -17,12 +21,13 @@ var _tier_hotbar := -1
 
 func _ready() -> void:
 	_topo = _label(Vector2(8, 4), 16)
-	_inv_lbl = _label(Vector2(8, 660), 14)
+	_inv_lbl = _label(Vector2(8, 622), 14)
 	_msg_lbl = _label(Vector2(8, 30), 18)
 	_msg_lbl.modulate = Color.YELLOW
 
 	_hotbar = HBoxContainer.new()
-	_hotbar.position = Vector2(8, 690)
+	_hotbar.position = Vector2(8, 644)
+	_hotbar.add_theme_constant_override("separation", 4)
 	add_child(_hotbar)
 
 	_shop = PanelContainer.new()
@@ -85,16 +90,12 @@ func _on_msg(texto: String) -> void:
 func _monta_hotbar() -> void:
 	for c in _hotbar.get_children():
 		c.queue_free()
+	_slots_tipos = []
 	for t in Defs.PREDIOS:
-		var d: Dictionary = Defs.PREDIOS[t]
-		if d["tier"] > Sim.tier:
+		if Defs.PREDIOS[t]["tier"] > Sim.tier:
 			continue
-		var b := Button.new()
-		b.text = "%s $%d" % [d["nome"].split(" (")[0], d["custo"]]
-		b.add_theme_font_size_override("font_size", 12)
-		b.pressed.connect(func(): build_type = t; get_viewport().gui_release_focus())
-	# hotbar nova a cada tier — predios demais? scroll fica pro v2
-		_hotbar.add_child(b)
+		_slots_tipos.append(t)
+		_hotbar.add_child(Slot.new(t, _slots_tipos.size(), self))
 
 
 func _unhandled_input(ev: InputEvent) -> void:
@@ -111,6 +112,11 @@ func _unhandled_input(ev: InputEvent) -> void:
 				toggle_shop()
 			KEY_Q:
 				build_type = ""
+			_:
+				# teclas 1-9,0 selecionam o slot da hotbar (aperta de novo = solta)
+				var idx := NUM_KEYS.find(ev.physical_keycode)
+				if idx >= 0 and idx < _slots_tipos.size() and not _shop.visible:
+					build_type = "" if build_type == _slots_tipos[idx] else _slots_tipos[idx]
 	elif ev is InputEventMouseButton and ev.pressed and not _shop.visible:
 		var cell := _mouse_cell()
 		if ev.button_index == MOUSE_BUTTON_LEFT and build_type != "":
@@ -190,6 +196,48 @@ func _sep(texto: String) -> Label:
 	l.add_theme_font_size_override("font_size", 15)
 	l.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
 	return l
+
+
+class Slot extends Control:
+	# slot da hotbar: icone procedural + numero do atalho + preco
+	var tipo := ""
+	var num := 0
+	var dono: CanvasLayer
+
+	func _init(t: String, n: int, u: CanvasLayer) -> void:
+		tipo = t
+		num = n
+		dono = u
+		custom_minimum_size = Vector2(54, 70)
+		var d: Dictionary = Defs.PREDIOS[t]
+		var extra := ""
+		if d["energia"] > 0:
+			extra = "\nEnergia: %d" % d["energia"]
+		elif d["energia"] < 0:
+			extra = "\nGera energia: %d" % -d["energia"]
+		tooltip_text = "%s\nCusto: $%d — %dx%d%s" % [d["nome"], d["custo"], d["tam"].x, d["tam"].y, extra]
+
+	func _process(_d: float) -> void:
+		queue_redraw()
+
+	func _draw() -> void:
+		var d: Dictionary = Defs.PREDIOS[tipo]
+		var sel: bool = dono.build_type == tipo
+		var pode: bool = Sim.money >= d["custo"]
+		draw_rect(Rect2(1, 1, 52, 52), Color(0.10, 0.10, 0.14, 0.92), true)
+		Icons.desenha(self, tipo, Vector2(27, 28), 1.0)
+		if not pode:
+			draw_rect(Rect2(1, 1, 52, 52), Color(0, 0, 0, 0.55), true)
+		draw_rect(Rect2(1, 1, 52, 52), Color.YELLOW if sel else Color(0.42, 0.42, 0.48), false, 2.0 if sel else 1.0)
+		if num <= 10:
+			draw_rect(Rect2(3, 3, 12, 13), Color(0, 0, 0, 0.6), true)
+			draw_string(ThemeDB.fallback_font, Vector2(6, 14), str(num % 10), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
+		draw_string(ThemeDB.fallback_font, Vector2(0, 66), "$%d" % d["custo"], HORIZONTAL_ALIGNMENT_CENTER, 54, 11, Color.GREEN_YELLOW if pode else Color(1, 0.4, 0.4))
+
+	func _gui_input(ev: InputEvent) -> void:
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			dono.build_type = "" if dono.build_type == tipo else tipo
+			accept_event()
 
 
 func _on_vitoria() -> void:
