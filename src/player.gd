@@ -7,6 +7,7 @@ const VEL := 150.0
 
 var ui: CanvasLayer
 var facing := Vector2i(0, 1)
+var _walk := 0.0  # fase da animacao de andar
 
 
 func _ready() -> void:
@@ -20,6 +21,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): v.x -= 1
 	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): v.x += 1
 	if v != Vector2.ZERO:
+		_walk += delta * 11.0
 		v = v.normalized() * VEL * delta
 		facing = Vector2i(v.sign())
 		var np := position + Vector2(v.x, 0)
@@ -28,6 +30,8 @@ func _physics_process(delta: float) -> void:
 		np = position + Vector2(0, v.y)
 		if _anda(np):
 			position = np
+	else:
+		_walk = 0.0
 	Sim.player_cell = Vector2i((position / TILE).floor())
 	# segurar E na bancada = prensar manual (GDD §5)
 	if Input.is_physical_key_pressed(KEY_E):
@@ -74,16 +78,18 @@ func _anda(p: Vector2) -> bool:
 
 
 func _draw() -> void:
-	# bonequinho: sombra, corpo, cabeca, bone; olhos seguem a direcao
+	# bonequinho: sombra, corpo, cabeca, bone; olhos seguem a direcao; pernas animam
+	var passo := sin(_walk) * 3.0
+	var bob := -absf(sin(_walk)) * 1.5
 	draw_circle(Vector2(0, 8), 8, Color(0, 0, 0, 0.3))
-	draw_rect(Rect2(-6, -4, 12, 13), Color(0.20, 0.45, 0.25), true)      # camisa
-	draw_rect(Rect2(-5, 7, 4, 5), Color(0.25, 0.25, 0.35), true)         # pernas
-	draw_rect(Rect2(1, 7, 4, 5), Color(0.25, 0.25, 0.35), true)
-	draw_circle(Vector2(0, -9), 7, Color(0.95, 0.80, 0.62))              # cabeca
-	draw_rect(Rect2(-7, -16, 14, 5), Color(0.60, 0.20, 0.20), true)      # bone
+	draw_rect(Rect2(-5, 7, 4, 5 + passo), Color(0.25, 0.25, 0.35), true)   # pernas alternando
+	draw_rect(Rect2(1, 7, 4, 5 - passo), Color(0.25, 0.25, 0.35), true)
+	draw_rect(Rect2(-6, -4 + bob, 12, 13), Color(0.20, 0.45, 0.25), true)  # camisa
+	draw_circle(Vector2(0, -9 + bob), 7, Color(0.95, 0.80, 0.62))          # cabeca
+	draw_rect(Rect2(-7, -16 + bob, 14, 5), Color(0.60, 0.20, 0.20), true)  # bone
 	var f := Vector2(facing).normalized() * 2.5
-	draw_circle(Vector2(-2.5, -9) + f, 1.2, Color.BLACK)                 # olhos
-	draw_circle(Vector2(2.5, -9) + f, 1.2, Color.BLACK)
+	draw_circle(Vector2(-2.5, -9 + bob) + f, 1.2, Color.BLACK)             # olhos
+	draw_circle(Vector2(2.5, -9 + bob) + f, 1.2, Color.BLACK)
 	# realce da celula alvo de interacao
 	var alvo := _celula_alvo()
 	if _perto(alvo) and Sim.ent_em(alvo) != null:

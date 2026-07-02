@@ -558,42 +558,59 @@ func inv_take(item: String, n: int) -> bool:
 
 # ---------------- comandos (inputs deterministicos — futuros pacotes de rede) ----------------
 
-func cmd_place(t: String, pos: Vector2i, dir: int) -> bool:
+func motivo_nao_construir(t: String, pos: Vector2i) -> String:
+	# "" = pode construir. Uma fonte so de verdade p/ cmd_place e p/ a UI explicar o erro.
 	if not Defs.PREDIOS.has(t):
-		return false
+		return "Prédio inválido"
 	var d: Dictionary = Defs.PREDIOS[t]
-	if tier < d["tier"] or money < d["custo"]:
-		return false
+	if tier < d["tier"]:
+		return "Precisa do Tier %d (cumpra a meta)" % d["tier"]
+	if money < d["custo"]:
+		return "Sem dinheiro (custa $%d)" % d["custo"]
 	var tam: Vector2i = d["tam"]
 	for dx in tam.x:
 		for dy in tam.y:
 			var c: Vector2i = pos + Vector2i(dx, dy)
-			if grid.has(c) or not celula_comprada(c):
-				return false
+			if not celula_comprada(c):
+				return "Lote não comprado (compre no PC)"
+			if grid.has(c):
+				return "Espaço ocupado"
 			var ter := terreno_em(c)
 			match t:
 				"extrator_madeira":
 					if ter != T.ARVORE:
-						return false
+						return "Coloque em cima de uma árvore"
 				"extrator_areia":
 					if ter != T.AREIA:
-						return false
+						return "Coloque em cima da areia"
 				"canteiro":
 					if ter != T.GRAMA:
-						return false
+						return "Canteiro só na grama"
 				_:
 					if ter == T.AGUA or ter == T.ARVORE:
-						return false
+						return "Terreno inválido"
 	if t == "poco":
 		var tem_agua := false
 		for dv in DIRS:
 			if terreno_em(pos + dv) == T.AGUA:
 				tem_agua = true
 		if not tem_agua:
-			return false
-	money -= d["custo"]
+			return "Poço precisa de água ao lado"
+	return ""
+
+
+func cmd_place(t: String, pos: Vector2i, dir: int) -> bool:
+	if motivo_nao_construir(t, pos) != "":
+		return false
+	money -= Defs.PREDIOS[t]["custo"]
 	_criar(t, pos, dir)
 	return true
+
+
+func cmd_rotate(pos: Vector2i, dir: int) -> void:
+	var e = ent_em(pos)
+	if e != null and e.has("dir") and dir >= 0 and dir < 4 and e["t"] != "pc" and e["t"] != "traficante":
+		e["dir"] = dir
 
 
 func cmd_remove(pos: Vector2i) -> bool:

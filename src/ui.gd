@@ -8,22 +8,44 @@ const NUM_KEYS := [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9
 
 var build_type := ""
 var rot := 1  # 0 N, 1 E, 2 S, 3 O
+var cam: Camera2D
 var _slots_tipos: Array = []  # ordem dos predios na hotbar (p/ teclas 1-9,0)
 var _topo: Label
 var _inv_lbl: Label
 var _msg_lbl: Label
+var _dica_lbl: Label
 var _msg_timer := 0.0
 var _hotbar: HBoxContainer
 var _shop: PanelContainer
 var _shop_box: VBoxContainer
 var _tier_hotbar := -1
+var _hover: PanelContainer
+var _hover_lbl: Label
+var _drag_build := false
+var _drag_prev := Vector2i.ZERO
+var _drag_rem := false
 
 
 func _ready() -> void:
 	_topo = _label(Vector2(8, 4), 16)
 	_inv_lbl = _label(Vector2(8, 622), 14)
-	_msg_lbl = _label(Vector2(8, 30), 18)
+	_dica_lbl = _label(Vector2(8, 56), 14)
+	_dica_lbl.modulate = Color(0.6, 0.9, 1.0)
+	_msg_lbl = _label(Vector2(8, 76), 18)
 	_msg_lbl.modulate = Color.YELLOW
+
+	var barras := Barras.new()
+	barras.position = Vector2(8, 26)
+	add_child(barras)
+
+	_hover = PanelContainer.new()
+	_hover.visible = false
+	_hover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hover_lbl = Label.new()
+	_hover_lbl.add_theme_font_size_override("font_size", 13)
+	_hover_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hover.add_child(_hover_lbl)
+	add_child(_hover)
 
 	_hotbar = HBoxContainer.new()
 	_hotbar.position = Vector2(8, 644)
@@ -64,9 +86,9 @@ func _process(delta: float) -> void:
 		meta = "META: %s (%d/%d)" % [m["desc"], Sim.meta_progresso(), m["qtd"]]
 	else:
 		meta = "Sandbox — você é o Maior Produtor"
-	var luz := " LUZ CORTADA!" if Sim.luz_cortada else ""
-	_topo.text = "$ %d   |   Energia: %d (própria %d, conta $%d/10s)%s   |   Calor: %d/100   |   Tier %d   |   %s" % [
-		Sim.money, Sim.energia_uso, Sim.ger_propria, Sim.conta_ultima, luz, Sim.heat, Sim.tier, meta]
+	_topo.text = "$ %d   |   Tier %d   |   %s   |   %d fps" % [Sim.money, Sim.tier, meta, Engine.get_frames_per_second()]
+	_dica_lbl.text = _dica()
+	_atualiza_hover()
 	var linhas := []
 	var chaves := Sim.inv.keys()
 	chaves.sort()
@@ -102,7 +124,13 @@ func _unhandled_input(ev: InputEvent) -> void:
 	if ev is InputEventKey and ev.pressed and not ev.echo:
 		match ev.physical_keycode:
 			KEY_R:
-				rot = (rot + 1) % 4
+				if build_type != "":
+					rot = (rot + 1) % 4
+				else:
+					# R sobre um predio existente: gira ele
+					var e = Sim.ent_em(_mouse_cell())
+					if e != null and e.has("dir"):
+						Sim.cmd_rotate(e["pos"], (e["dir"] + 1) % 4)
 			KEY_ESCAPE:
 				if _shop.visible:
 					_shop.visible = false
@@ -117,16 +145,58 @@ func _unhandled_input(ev: InputEvent) -> void:
 				var idx := NUM_KEYS.find(ev.physical_keycode)
 				if idx >= 0 and idx < _slots_tipos.size() and not _shop.visible:
 					build_type = "" if build_type == _slots_tipos[idx] else _slots_tipos[idx]
-	elif ev is InputEventMouseButton and ev.pressed and not _shop.visible:
-		var cell := _mouse_cell()
-		if ev.button_index == MOUSE_BUTTON_LEFT and build_type != "":
-			if not Sim.cmd_place(build_type, cell, rot):
-				_on_msg("Não dá pra construir aí (dinheiro, terreno ou lote).")
+	elif ev is InputEventMouseButton:
+		if ev.pressed and ev.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_zoom(1.15)
+		elif ev.pressed and ev.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_zoom(1.0 / 1.15)
+		elif _shop.visible:
+			pass
+		elif ev.button_index == MOUSE_BUTTON_LEFT:
+			if ev.pressed and build_type != "":
+				_drag_prev = _mouse_cell()
+				_tenta_construir(_drag_prev)
+				_drag_build = true
+			elif not ev.pressed:
+				_drag_build = false
 		elif ev.button_index == MOUSE_BUTTON_RIGHT:
-			if build_type != "":
-				build_type = ""
+			if ev.pressed:
+				if build_type != "":
+					build_type = ""
+				else:
+					Sim.cmd_remove(_mouse_cell())
+					_drag_rem = true
 			else:
-				Sim.cmd_remove(cell)
+				_drag_rem = false
+	elif ev is InputEventMouseMotion and not _shop.visible:
+		if _drag_build and (build_type == "esteira" or build_type == "cano"):
+			# arrastar pinta uma linha; esteiras viram sozinhas na direcao do arrasto
+			var cell := _mouse_cell()
+			while cell != _drag_prev:
+				var d := cell - _drag_prev
+				var passo := Vector2i(signi(d.x), 0) if absi(d.x) >= absi(d.y) else Vector2i(0, signi(d.y))
+				if build_type == "esteira":
+					rot = Sim.DIRS.find(passo)
+					var ant = Sim.ent_em(_drag_prev)
+					if ant != null and ant["t"] == "esteira":
+						Sim.cmd_rotate(_drag_prev, rot)  # linha continua
+				_drag_prev += passo
+				_tenta_construir(_drag_prev)
+		elif _drag_rem:
+			Sim.cmd_remove(_mouse_cell())
+
+
+func _zoom(f: float) -> void:
+	if cam != null:
+		var z: float = clampf(cam.zoom.x * f, 0.6, 2.6)
+		cam.zoom = Vector2(z, z)
+
+
+func _tenta_construir(cell: Vector2i) -> void:
+	if not Sim.cmd_place(build_type, cell, rot):
+		var motivo := Sim.motivo_nao_construir(build_type, cell)
+		if motivo != "" and motivo != "Espaço ocupado":  # ocupado no arrasto e normal, sem spam
+			_on_msg(motivo)
 
 
 func _mouse_cell() -> Vector2i:
@@ -196,6 +266,177 @@ func _sep(texto: String) -> Label:
 	l.add_theme_font_size_override("font_size", 15)
 	l.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
 	return l
+
+
+# ---------------- hover: o que essa coisa esta fazendo? ----------------
+
+func _atualiza_hover() -> void:
+	var e = Sim.ent_em(_mouse_cell())
+	if e == null or build_type != "" or _shop.visible:
+		_hover.visible = false
+		return
+	_hover.visible = true
+	_hover_lbl.text = _info_ent(e)
+	_hover.reset_size()
+	var mp := get_viewport().get_mouse_position() + Vector2(18, 18)
+	var tela := get_viewport().get_visible_rect().size
+	mp.x = clampf(mp.x, 0, tela.x - _hover.size.x - 8)
+	mp.y = clampf(mp.y, 0, tela.y - _hover.size.y - 8)
+	_hover.position = mp
+
+
+func _info_ent(e: Dictionary) -> String:
+	var t: String = e["t"]
+	var l: Array = []
+	match t:
+		"pc":
+			return "PC — aperte E pra comprar"
+		"traficante":
+			return "Traficante do beco\nVenda com E ou entregue por esteira\n(vender aumenta o calor!)"
+		"esteira":
+			l.append("Esteira")
+			if e["item"] != "":
+				l.append("Levando: " + Defs.item_nome(e["item"]))
+		"cano", "poco":
+			l.append("Poço (+3 água/tick)" if t == "poco" else "Cano")
+			var n: int = e.get("net", -1)
+			if n >= 0 and n < Sim.redes.size():
+				l.append("Água na rede: %d / %d" % [Sim.redes[n]["vol"], Sim.redes[n]["cap"]])
+		"canteiro":
+			l.append("Canteiro")
+			if e["cepa"] != "":
+				l.append("Cepa: " + Defs.STRAINS[e["cepa"]]["nome"])
+			match e["fase"]:
+				0: l.append("Vazio — E pra plantar")
+				1: l.append("SECO — E pra regar")
+				2: l.append("Crescendo... faltam %ds" % maxi(0, (Defs.STRAINS[e["cepa"]]["grow"] - e["tempo"]) / 10))
+				3: l.append("PRONTO — E pra colher")
+		"bancada":
+			l.append("Bancada de Prensa (manual)")
+			l.append("2x Bud → 1x Prensado")
+			l.append("Segure E com 2 buds da mesma cepa")
+		"gerador":
+			l.append("Gerador a Biomassa (+30 energia)")
+			l.append("Queima madeira/buds (esteira ou E)")
+			l.append("Combustível: %ds" % (e["fuel"] / 10) if e["fuel"] > 0 else "SEM COMBUSTÍVEL")
+		"solar":
+			return "Painel Solar (+6 energia)"
+		"filtro":
+			return "Filtro de Carvão\nReduz o calor por venda"
+		_:
+			if Defs.ESTUFAS.has(t):
+				var d: Dictionary = Defs.ESTUFAS[t]
+				l.append(Defs.PREDIOS[t]["nome"])
+				l.append("1 Semente + %d água → %d Buds" % [d["agua"], d["buds"]])
+				l.append("Sementes na fila: %d" % e["sementes"].size())
+				if e["prog"] > 0:
+					l.append("Ciclo (%s): %d%%" % [Defs.STRAINS[e["cepa_ciclo"]]["nome"], e["prog"] * 100 / (d["t"] * 256)])
+				elif e["sementes"].is_empty():
+					l.append("PARADA: sem sementes")
+				elif Sim._rede_adjacente(e) < 0:
+					l.append("PARADA: sem cano com água do lado")
+			elif Defs.RECEITAS.has(t):
+				var r: Dictionary = Defs.RECEITAS[t]
+				l.append(Defs.PREDIOS[t]["nome"])
+				l.append(_nome_receita(r))
+				if e.get("cepa", "") != "":
+					l.append("Linha travada: " + Defs.STRAINS[e["cepa"]]["nome"])
+				for k in e.get("ins", {}):
+					if e["ins"][k] > 0:
+						l.append("Dentro: %dx %s" % [e["ins"][k], Defs.PROD_NOME.get(k, k)])
+				for cepa_b in e.get("blend", []):
+					l.append("Dentro: Bud " + Defs.STRAINS[cepa_b]["nome"])
+				if e["prog"] > 0:
+					l.append("Produzindo: %d%%" % (e["prog"] * 100 / (r["t"] * 256)))
+				if r.get("agua", 0) > 0 and Sim._rede_adjacente(e) < 0:
+					l.append("PARADA: precisa de cano com água do lado")
+	if e.get("out_n", 0) > 0:
+		l.append("Saída: %dx %s (E coleta)" % [e["out_n"], Defs.item_nome(e["out_item"])])
+	var energia: int = Defs.PREDIOS[t]["energia"] if Defs.PREDIOS.has(t) else 0
+	if energia > 0 and Sim.fator < 256:
+		l.append("ENERGIA FRACA: rodando a %d%%" % (Sim.fator * 100 / 256))
+	return "\n".join(l)
+
+
+func _nome_receita(r: Dictionary) -> String:
+	var ins: Array = []
+	for k in r["in"]:
+		if k == "bud2cat":
+			ins.append("2x Bud (cepas diferentes, mesma categoria)")
+		else:
+			ins.append("%dx %s" % [r["in"][k], Defs.PROD_NOME.get(k, k)])
+	if r.get("agua", 0) > 0:
+		ins.append("%d água" % r["agua"])
+	var out: String = "Blend" if r["out"] == "blend" else Defs.PROD_NOME.get(r["out"], r["out"])
+	return "%s → %dx %s" % [" + ".join(ins) if ins.size() else "(nada)", r["n"], out]
+
+
+# ---------------- dica contextual (o que fazer agora) ----------------
+
+func _dica() -> String:
+	if Sim.venceu:
+		return ""
+	if Sim.luz_cortada:
+		return "DICA: sem luz! Venda algo pra pagar a conta na próxima cobrança"
+	if Sim.heat >= 70:
+		return "DICA: calor alto — pare de vender um pouco ou contrate o advogado no PC"
+	var tem_canteiro := false
+	var seco := false
+	var pronto := false
+	var tem_auto := false
+	for id in Sim.ents:
+		var e: Dictionary = Sim.ents[id]
+		if e["t"] == "canteiro":
+			tem_canteiro = true
+			seco = seco or e["fase"] == 1
+			pronto = pronto or e["fase"] == 3
+		elif Defs.RECEITAS.has(e["t"]) and not Defs.RECEITAS[e["t"]].get("manual", false):
+			tem_auto = true
+	if pronto:
+		return "DICA: colheita pronta! Aperte E no canteiro"
+	if seco:
+		return "DICA: planta seca — aperte E no canteiro pra regar"
+	if not tem_canteiro:
+		return "DICA: coloque um canteiro no quintal (tecla 2) e plante uma semente (E)"
+	var tem_semente := false
+	var buds := 0
+	for k in Sim.inv:
+		if Defs.item_prod(k) == "semente":
+			tem_semente = true
+		elif Defs.item_prod(k) == "bud":
+			buds += Sim.inv[k]
+	if buds >= 2:
+		return "DICA: venda buds no beco (E no traficante) ou prense 2 na bancada da cozinha"
+	if not tem_semente and buds == 0:
+		return "DICA: compre sementes no PC (Tab ou E no PC)"
+	if Sim.tier >= 1 and not tem_auto:
+		return "DICA: Tier 1! Monte uma Máquina de Pura com esteiras levando até o beco"
+	return ""
+
+
+class Barras extends Control:
+	# energia (quanto da fabrica roda com geracao propria) e calor da policia
+	func _process(_d: float) -> void:
+		queue_redraw()
+
+	func _draw() -> void:
+		var f := ThemeDB.fallback_font
+		var cob := 1.0 if Sim.energia_uso == 0 else clampf(float(Sim.ger_propria) / Sim.energia_uso, 0.0, 1.0)
+		draw_string(f, Vector2(0, 11), "Energia", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE)
+		draw_rect(Rect2(58, 2, 140, 11), Color(0.12, 0.12, 0.16, 0.9), true)
+		draw_rect(Rect2(58, 2, 140 * cob, 11), Color(0.30, 0.75, 0.40), true)   # verde = geracao propria
+		draw_rect(Rect2(58, 2, 140, 11), Color(0.5, 0.5, 0.55), false, 1.0)
+		var txt := "uso %d | própria %d | conta $%d/10s" % [Sim.energia_uso, Sim.ger_propria, Sim.conta_ultima]
+		if Sim.luz_cortada:
+			txt += "  LUZ CORTADA!"
+		draw_string(f, Vector2(204, 11), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.RED if Sim.luz_cortada else Color(0.85, 0.85, 0.9))
+		draw_string(f, Vector2(0, 27), "Calor", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE)
+		var hc := Color(0.3, 0.8, 0.3).lerp(Color(0.95, 0.2, 0.2), Sim.heat / 100.0)
+		draw_rect(Rect2(58, 18, 140, 11), Color(0.12, 0.12, 0.16, 0.9), true)
+		draw_rect(Rect2(58, 18, 140 * Sim.heat / 100.0, 11), hc, true)
+		draw_rect(Rect2(58, 18, 140, 11), Color(0.5, 0.5, 0.55), false, 1.0)
+		if Sim.heat >= 70:
+			draw_string(f, Vector2(204, 27), "POLÍCIA DE OLHO!", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.RED)
 
 
 class Slot extends Control:

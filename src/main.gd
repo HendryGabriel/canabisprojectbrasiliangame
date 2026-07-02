@@ -13,6 +13,10 @@ func _ready() -> void:
 	var cam := Camera2D.new()
 	cam.zoom = Vector2(1.4, 1.4)
 	cam.position_smoothing_enabled = true
+	cam.limit_left = 0
+	cam.limit_top = 0
+	cam.limit_right = Sim.W * 32
+	cam.limit_bottom = Sim.H * 32
 	player.add_child(cam)
 
 	var ui := CanvasLayer.new()
@@ -21,3 +25,4 @@ func _ready() -> void:
 
 	render.ui = ui
 	player.ui = ui
+	ui.cam = cam

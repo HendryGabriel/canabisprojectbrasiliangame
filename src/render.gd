@@ -110,21 +110,42 @@ func _tile_img(t: int, variante: int) -> Image:
 
 func _draw() -> void:
 	draw_texture_rect(_fundo, Rect2(0, 0, Sim.W * TILE, Sim.H * TILE), false)
+	_draw_casa()
 	_draw_lotes()
+	# culling: so desenha o que a camera ve (fabricas grandes continuam a 60fps)
+	var vis: Rect2 = (get_canvas_transform().affine_inverse() * get_viewport_rect()).grow(TILE * 2)
 	var ids := Sim.ents.keys()
 	ids.sort()
 	# canos e esteiras primeiro (chao), depois maquinas (em cima)
 	for id in ids:
 		var e: Dictionary = Sim.ents[id]
-		if e["t"] == "cano" or e["t"] == "esteira":
+		if (e["t"] == "cano" or e["t"] == "esteira") and vis.intersects(_ent_rect(e)):
 			_draw_ent(e)
 	for id in ids:
 		var e: Dictionary = Sim.ents[id]
-		if e["t"] != "cano" and e["t"] != "esteira":
+		if e["t"] != "cano" and e["t"] != "esteira" and vis.intersects(_ent_rect(e)):
 			_draw_ent(e)
 	for f in _floats:
 		draw_string(_fonte, f["pos"], f["txt"], HORIZONTAL_ALIGNMENT_CENTER, -1, 16, f["cor"])
 	_draw_ghost()
+
+
+func _ent_rect(e: Dictionary) -> Rect2:
+	var tam: Vector2i = Defs.PREDIOS[e["t"]]["tam"] if Defs.PREDIOS.has(e["t"]) else Vector2i(1, 1)
+	return Rect2(e["pos"] * TILE, tam * TILE)
+
+
+func _draw_casa() -> void:
+	# paredes da casa com porta embaixo (o avatar nasce na porta)
+	var cor := Color(0.32, 0.20, 0.11)
+	var p := Vector2(4, 3) * TILE
+	var s := Vector2(7, 6) * TILE
+	draw_line(p + Vector2(-2, 0), p + Vector2(s.x + 2, 0), cor, 6.0)
+	draw_line(p, p + Vector2(0, s.y), cor, 6.0)
+	draw_line(p + Vector2(s.x, 0), p + s, cor, 6.0)
+	draw_line(p + Vector2(0, s.y), p + Vector2(3 * TILE, s.y), cor, 6.0)   # porta no tile 7
+	draw_line(p + Vector2(4 * TILE, s.y), p + s, cor, 6.0)
+	draw_rect(Rect2(p + Vector2(3 * TILE, s.y - 2), Vector2(TILE, 4)), Color(0.65, 0.50, 0.30), true)  # soleira
 
 
 func _draw_lotes() -> void:
@@ -141,6 +162,8 @@ func _draw_ent(e: Dictionary) -> void:
 	var t: String = e["t"]
 	var tam: Vector2i = Defs.PREDIOS[t]["tam"] if Defs.PREDIOS.has(t) else Vector2i(1, 1)
 	var px := Rect2(e["pos"] * TILE, tam * TILE)
+	if t != "esteira" and t != "cano" and t != "canteiro":
+		draw_rect(Rect2(px.position + Vector2(3, 4), px.size), Color(0, 0, 0, 0.22), true)  # sombra
 	match t:
 		"esteira": _draw_esteira(e, px)
 		"cano": _draw_cano(e, px)
