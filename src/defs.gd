@@ -4,6 +4,8 @@ extends Node
 
 enum Cat { RUDERALIS, SATIVA, INDICA, HYBRID }
 
+const TILE_SIZE := 16
+
 const CAT_NOME := {Cat.RUDERALIS: "Ruderalis", Cat.SATIVA: "Sativa", Cat.INDICA: "Indica", Cat.HYBRID: "Híbrida"}
 
 # grow em ticks (10/s). Ciclos curtos no inicio (GDD: progressao rapida).

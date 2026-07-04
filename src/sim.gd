@@ -103,6 +103,29 @@ func terreno_em(c: Vector2i) -> int:
 	return terreno[c.y * W + c.x]
 
 
+func load_terrain_from_floor_layer(layer: TileMapLayer) -> void:
+	var used_cells: Array[Vector2i] = layer.get_used_cells()
+	if used_cells.is_empty():
+		return
+	terreno.fill(T.GRAMA)
+	for cell in used_cells:
+		var terrain_cell: Vector2i = cell
+		if terrain_cell.x < 0 or terrain_cell.y < 0 or terrain_cell.x >= W or terrain_cell.y >= H:
+			continue
+		var atlas: Vector2i = layer.get_cell_atlas_coords(terrain_cell)
+		_set_t(terrain_cell.x, terrain_cell.y, _terrain_from_floor_atlas(atlas))
+
+
+func _terrain_from_floor_atlas(atlas: Vector2i) -> int:
+	if atlas.x >= 5 and atlas.x <= 9 and atlas.y >= 12 and atlas.y <= 25:
+		return T.AREIA
+	if atlas.x >= 15 and atlas.x <= 19 and atlas.y >= 0 and atlas.y <= 4:
+		return T.PISO
+	if atlas.x >= 5 and atlas.x <= 9 and atlas.y >= 0 and atlas.y <= 11:
+		return T.BECO
+	return T.GRAMA
+
+
 func lote_de(c: Vector2i) -> int:
 	for i in Defs.LOTES.size():
 		if Defs.LOTES[i]["rect"].has_point(c):
@@ -197,7 +220,7 @@ func _step() -> void:
 
 func _tick_energia() -> void:
 	var avail := ger_propria + (0 if luz_cortada else 100000)  # cidade = infinita, mas paga
-	fator = 256 if energia_uso <= avail else maxi(32, avail * 256 / maxi(1, energia_uso))
+	fator = 256 if energia_uso <= avail else maxi(32, floori(float(avail * 256) / float(maxi(1, energia_uso))))
 	if tick % 100 == 0:
 		var conta := maxi(0, energia_uso - ger_propria)
 		conta_ultima = conta
@@ -215,7 +238,7 @@ func _tick_heat() -> void:
 	if tick % 10 == 0:
 		heat = maxi(0, heat - 1)
 	if heat >= 100:
-		money = money * 7 / 10
+		money = floori(float(money * 7) / 10.0)
 		heat = 35
 		msg.emit("BATIDA POLICIAL! Multa de 30% do seu dinheiro.")
 
@@ -239,7 +262,7 @@ func _vender(item: String) -> bool:
 	vendas[prod] = vendas.get(prod, 0) + 1
 	# calor por venda, reduzido por filtros de carvao (GDD §8)
 	heat_frac += maxi(20, 100 - _n_filtros() * 15)
-	heat = mini(100, heat + heat_frac / 100)
+	heat = mini(100, heat + floori(float(heat_frac) / 100.0))
 	heat_frac %= 100
 	_checa_meta()
 	return true
@@ -379,11 +402,13 @@ func _empurra_saida(e: Dictionary) -> void:
 func _celula_frente(e: Dictionary) -> Vector2i:
 	var tam: Vector2i = Defs.PREDIOS[e["t"]]["tam"] if Defs.PREDIOS.has(e["t"]) else Vector2i(1, 1)
 	var p: Vector2i = e["pos"]
+	var center_x: int = floori(float(tam.x - 1) / 2.0)
+	var center_y: int = floori(float(tam.y - 1) / 2.0)
 	match e["dir"]:
-		0: return Vector2i(p.x + (tam.x - 1) / 2, p.y - 1)
-		1: return Vector2i(p.x + tam.x, p.y + (tam.y - 1) / 2)
-		2: return Vector2i(p.x + (tam.x - 1) / 2, p.y + tam.y)
-		_: return Vector2i(p.x - 1, p.y + (tam.y - 1) / 2)
+		0: return Vector2i(p.x + center_x, p.y - 1)
+		1: return Vector2i(p.x + tam.x, p.y + center_y)
+		2: return Vector2i(p.x + center_x, p.y + tam.y)
+		_: return Vector2i(p.x - 1, p.y + center_y)
 
 
 # ---------------- esteiras ----------------
@@ -618,7 +643,7 @@ func cmd_remove(pos: Vector2i) -> bool:
 	if e == null or e["t"] == "pc" or e["t"] == "traficante":
 		return false
 	var custo: int = Defs.PREDIOS[e["t"]]["custo"] if Defs.PREDIOS.has(e["t"]) else 0
-	money += custo / 2
+	money += floori(float(custo) / 2.0)
 	var tam: Vector2i = Defs.PREDIOS[e["t"]]["tam"] if Defs.PREDIOS.has(e["t"]) else Vector2i(1, 1)
 	for dx in tam.x:
 		for dy in tam.y:

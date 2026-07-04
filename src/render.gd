@@ -3,7 +3,9 @@ extends Node2D
 # Tudo em codigo — quando os sprites chegarem em assets/, substituem estes desenhos
 # sem tocar na simulacao.
 
-const TILE := 32
+const DefsData := preload("res://src/defs.gd")
+const TILE := DefsData.TILE_SIZE
+const HALF_TILE := TILE * 0.5
 const Icons := preload("res://src/icons.gd")
 
 # cor base por cepa (folha/bud/chip nas maquinas)
@@ -16,7 +18,7 @@ const COR_CEPA := {
 }
 
 var ui: CanvasLayer
-var _fundo: ImageTexture
+var _terrain_overlay: ImageTexture
 var _fonte: Font
 var _traficante_pos := Vector2.ZERO
 var _money_antes := -1
@@ -25,10 +27,10 @@ var _floats: Array = []  # {pos, txt, ttl, cor}
 
 func _ready() -> void:
 	_fonte = ThemeDB.fallback_font
-	_bake_terreno()
+	_bake_terrain_overlay()
 	for id in Sim.ents:
 		if Sim.ents[id]["t"] == "traficante":
-			_traficante_pos = Vector2(Sim.ents[id]["pos"] * TILE) + Vector2(16, 16)
+			_traficante_pos = _cell_center(Sim.ents[id]["pos"])
 
 
 func _process(delta: float) -> void:
@@ -43,73 +45,52 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-# ---------------- terreno (assado uma vez, variantes por tile) ----------------
+# ---------------- terreno temporario: agua e arvores ----------------
 
-func _bake_terreno() -> void:
-	var tiles := {}
-	for t in [Sim.T.GRAMA, Sim.T.AGUA, Sim.T.ARVORE, Sim.T.AREIA, Sim.T.PISO, Sim.T.BECO]:
-		tiles[t] = []
-		for v in 3:
-			tiles[t].append(_tile_img(t, v))
-	var img := Image.create(Sim.W * TILE, Sim.H * TILE, false, Image.FORMAT_RGB8)
+func _bake_terrain_overlay() -> void:
+	var img: Image = Image.create(Sim.W * TILE, Sim.H * TILE, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
 	for x in Sim.W:
 		for y in Sim.H:
-			var t := Sim.terreno_em(Vector2i(x, y))
-			var v := (x * 7 + y * 13) % 3
-			img.blit_rect(tiles[t][v], Rect2i(0, 0, TILE, TILE), Vector2i(x * TILE, y * TILE))
-	_fundo = ImageTexture.create_from_image(img)
+			var cell: Vector2i = Vector2i(x, y)
+			var terrain: int = Sim.terreno_em(cell)
+			if terrain != Sim.T.AGUA and terrain != Sim.T.ARVORE:
+				continue
+			var tile: Image = _terrain_overlay_img(terrain, (x * 7 + y * 13) % 3)
+			img.blit_rect(tile, Rect2i(0, 0, TILE, TILE), cell * TILE)
+	_terrain_overlay = ImageTexture.create_from_image(img)
 
 
-func _tile_img(t: int, variante: int) -> Image:
-	var img := Image.create(TILE, TILE, false, Image.FORMAT_RGB8)
-	var rnd := variante * 97
-	match t:
-		Sim.T.GRAMA:
-			img.fill(Color(0.32, 0.52, 0.28).lightened(variante * 0.02))
-			for i in 26:  # tufos de grama
-				var px := (i * 13 + rnd) % TILE
-				var py := (i * 23 + rnd * 3) % TILE
-				img.set_pixel(px, py, Color(0.24, 0.44, 0.20))
-				img.set_pixel(px, maxi(0, py - 1), Color(0.40, 0.62, 0.32))
+func _terrain_overlay_img(terrain: int, variante: int) -> Image:
+	var img: Image = Image.create(TILE, TILE, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rnd: int = variante * 97
+	match terrain:
 		Sim.T.AGUA:
 			img.fill(Color(0.16, 0.36, 0.62))
-			for i in 5:  # ondinhas
-				var wy := (i * 7 + rnd) % (TILE - 2) + 1
+			for i in 5:
+				var wy: int = (i * 7 + rnd) % (TILE - 2) + 1
 				for wx in range(2 + (i * 5) % 8, TILE - 4, 9):
 					img.set_pixel(wx, wy, Color(0.35, 0.55, 0.80))
 					img.set_pixel(wx + 1, wy, Color(0.35, 0.55, 0.80))
 		Sim.T.ARVORE:
-			img.fill(Color(0.30, 0.48, 0.26))
-			for px in range(13, 19):  # tronco
-				for py in range(20, 30):
+			for px in range(6, 10):
+				for py in range(9, 15):
 					img.set_pixel(px, py, Color(0.35, 0.22, 0.10))
-			for px in TILE:  # copa
-				for py in TILE:
-					var d := Vector2(px - 16, py - 13).length()
-					if d < 12 - ((px * 3 + py * 7 + rnd) % 3):
-						img.set_pixel(px, py, Color(0.10, 0.32, 0.10) if (px + py + rnd) % 4 else Color(0.16, 0.42, 0.14))
-		Sim.T.AREIA:
-			img.fill(Color(0.78, 0.70, 0.46))
-			for i in 20:
-				img.set_pixel((i * 17 + rnd) % TILE, (i * 29 + rnd) % TILE, Color(0.68, 0.58, 0.36))
-		Sim.T.PISO:
-			img.fill(Color(0.56, 0.46, 0.36))
-			for px in TILE:  # tabuas
-				for py in range(0, TILE, 8):
-					img.set_pixel(px, py, Color(0.46, 0.36, 0.28))
-		Sim.T.BECO:
-			img.fill(Color(0.20, 0.19, 0.23))
 			for px in TILE:
-				if px % 8 == 0:
-					for py in TILE:
-						img.set_pixel(px, py, Color(0.15, 0.14, 0.18))
+				for py in TILE:
+					var d: float = Vector2(px - HALF_TILE, py - 6).length()
+					if d < 6 - ((px * 3 + py * 7 + rnd) % 2):
+						var tree_color: Color = Color(0.10, 0.32, 0.10) if (px + py + rnd) % 4 else Color(0.16, 0.42, 0.14)
+						img.set_pixel(px, py, tree_color)
 	return img
 
 
 # ---------------- draw principal ----------------
 
 func _draw() -> void:
-	draw_texture_rect(_fundo, Rect2(0, 0, Sim.W * TILE, Sim.H * TILE), false)
+	if _terrain_overlay != null:
+		draw_texture_rect(_terrain_overlay, Rect2(0, 0, Sim.W * TILE, Sim.H * TILE), false)
 	_draw_casa()
 	_draw_lotes()
 	# culling: so desenha o que a camera ve (fabricas grandes continuam a 60fps)
@@ -132,7 +113,19 @@ func _draw() -> void:
 
 func _ent_rect(e: Dictionary) -> Rect2:
 	var tam: Vector2i = Defs.PREDIOS[e["t"]]["tam"] if Defs.PREDIOS.has(e["t"]) else Vector2i(1, 1)
-	return Rect2(e["pos"] * TILE, tam * TILE)
+	return _grid_rect(e["pos"], tam)
+
+
+func _grid_rect(pos: Vector2i, tam: Vector2i) -> Rect2:
+	return Rect2(Vector2(pos) * TILE, Vector2(tam) * TILE)
+
+
+func _draw_texture_in_grid(texture: Texture2D, pos: Vector2i, tam: Vector2i) -> void:
+	draw_texture_rect(texture, _grid_rect(pos, tam), false)
+
+
+func _cell_center(cell: Vector2i) -> Vector2:
+	return Vector2(cell) * TILE + Vector2(HALF_TILE, HALF_TILE)
 
 
 func _draw_casa() -> void:
@@ -151,7 +144,7 @@ func _draw_casa() -> void:
 func _draw_lotes() -> void:
 	for i in Defs.LOTES.size():
 		var r: Rect2i = Defs.LOTES[i]["rect"]
-		var px := Rect2(r.position * TILE, r.size * TILE)
+		var px := _grid_rect(r.position, r.size)
 		if i >= Sim.lotes_comprados:
 			draw_rect(px, Color(0, 0, 0, 0.55), true)
 			draw_string(_fonte, px.position + Vector2(20, 40), "LOTE %d — $%d (compre no PC)" % [i, Defs.LOTES[i]["custo"]], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
@@ -161,7 +154,7 @@ func _draw_lotes() -> void:
 func _draw_ent(e: Dictionary) -> void:
 	var t: String = e["t"]
 	var tam: Vector2i = Defs.PREDIOS[t]["tam"] if Defs.PREDIOS.has(t) else Vector2i(1, 1)
-	var px := Rect2(e["pos"] * TILE, tam * TILE)
+	var px := _grid_rect(e["pos"], tam)
 	if t != "esteira" and t != "cano" and t != "canteiro":
 		draw_rect(Rect2(px.position + Vector2(3, 4), px.size), Color(0, 0, 0, 0.22), true)  # sombra
 	match t:
@@ -420,7 +413,7 @@ func _badge_saida(e: Dictionary, px: Rect2) -> void:
 
 func _draw_chute_saida(e: Dictionary) -> void:
 	var alvo: Vector2i = Sim._celula_frente(e)
-	var c := Vector2(alvo) * TILE + Vector2(16, 16)
+	var c := _cell_center(alvo)
 	var v := Vector2(Sim.DIRS[e["dir"]])
 	var base := c - v * 10
 	draw_line(base - v * 6, base, Color(1, 1, 0.5, 0.8), 4.0)
@@ -496,7 +489,7 @@ func _draw_ghost() -> void:
 		return
 	var cell := Vector2i((get_global_mouse_position() / TILE).floor())
 	var tam: Vector2i = Defs.PREDIOS[ui.build_type]["tam"]
-	var px := Rect2(cell * TILE, tam * TILE)
+	var px := _grid_rect(cell, tam)
 	var ok := true
 	for dx in tam.x:
 		for dy in tam.y:

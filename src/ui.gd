@@ -1,7 +1,8 @@
 extends CanvasLayer
 # HUD + hotbar de construcao + loja do PC + mensagens + vitoria. Tudo em codigo.
 
-const TILE := 32
+const DefsData := preload("res://src/defs.gd")
+const TILE := DefsData.TILE_SIZE
 const Icons := preload("res://src/icons.gd")
 
 const NUM_KEYS := [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0]
@@ -209,7 +210,7 @@ func _unhandled_input(ev: InputEvent) -> void:
 
 func _zoom(f: float) -> void:
 	if cam != null:
-		var z: float = clampf(cam.zoom.x * f, 0.6, 2.6)
+		var z: float = clampf(cam.zoom.x * f, 1.2, 5.2)
 		cam.zoom = Vector2(z, z)
 
 
@@ -391,7 +392,7 @@ func _info_ent(e: Dictionary) -> String:
 			match e["fase"]:
 				0: l.append("Vazio — E pra plantar")
 				1: l.append("SECO — E pra regar")
-				2: l.append("Crescendo... faltam %ds" % maxi(0, (Defs.STRAINS[e["cepa"]]["grow"] - e["tempo"]) / 10))
+				2: l.append("Crescendo... faltam %ds" % maxi(0, floori(float(Defs.STRAINS[e["cepa"]]["grow"] - e["tempo"]) / 10.0)))
 				3: l.append("PRONTO — E pra colher")
 		"bancada":
 			l.append("Bancada de Prensa (manual)")
@@ -400,7 +401,7 @@ func _info_ent(e: Dictionary) -> String:
 		"gerador":
 			l.append("Gerador a Biomassa (+30 energia)")
 			l.append("Queima madeira/buds (esteira ou E)")
-			l.append("Combustível: %ds" % (e["fuel"] / 10) if e["fuel"] > 0 else "SEM COMBUSTÍVEL")
+			l.append("Combustível: %ds" % floori(float(e["fuel"]) / 10.0) if e["fuel"] > 0 else "SEM COMBUSTÍVEL")
 		"solar":
 			return "Painel Solar (+6 energia)"
 		"filtro":
@@ -412,7 +413,7 @@ func _info_ent(e: Dictionary) -> String:
 				l.append("1 Semente + %d água → %d Buds" % [d["agua"], d["buds"]])
 				l.append("Sementes na fila: %d" % e["sementes"].size())
 				if e["prog"] > 0:
-					l.append("Ciclo (%s): %d%%" % [Defs.STRAINS[e["cepa_ciclo"]]["nome"], e["prog"] * 100 / (d["t"] * 256)])
+					l.append("Ciclo (%s): %d%%" % [Defs.STRAINS[e["cepa_ciclo"]]["nome"], floori(float(e["prog"] * 100) / float(d["t"] * 256))])
 				elif e["sementes"].is_empty():
 					l.append("PARADA: sem sementes")
 				elif Sim._rede_adjacente(e) < 0:
@@ -429,14 +430,14 @@ func _info_ent(e: Dictionary) -> String:
 				for cepa_b in e.get("blend", []):
 					l.append("Dentro: Bud " + Defs.STRAINS[cepa_b]["nome"])
 				if e["prog"] > 0:
-					l.append("Produzindo: %d%%" % (e["prog"] * 100 / (r["t"] * 256)))
+					l.append("Produzindo: %d%%" % floori(float(e["prog"] * 100) / float(r["t"] * 256)))
 				if r.get("agua", 0) > 0 and Sim._rede_adjacente(e) < 0:
 					l.append("PARADA: precisa de cano com água do lado")
 	if e.get("out_n", 0) > 0:
 		l.append("Saída: %dx %s (E coleta)" % [e["out_n"], Defs.item_nome(e["out_item"])])
 	var energia: int = Defs.PREDIOS[t]["energia"] if Defs.PREDIOS.has(t) else 0
 	if energia > 0 and Sim.fator < 256:
-		l.append("ENERGIA FRACA: rodando a %d%%" % (Sim.fator * 100 / 256))
+		l.append("ENERGIA FRACA: rodando a %d%%" % floori(float(Sim.fator * 100) / 256.0))
 	return "\n".join(l)
 
 

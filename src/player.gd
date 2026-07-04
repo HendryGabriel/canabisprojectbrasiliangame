@@ -2,8 +2,10 @@ extends Node2D
 # Avatar: movimento livre em 8 direcoes (GDD §10). So as construcoes respeitam o grid.
 # O player NAO faz parte da sim deterministica; ele injeta comandos (cmd_*).
 
-const TILE := 32
-const VEL := 150.0
+const DefsData := preload("res://src/defs.gd")
+const TILE := DefsData.TILE_SIZE
+const VEL := TILE * 4.6875
+const HALF_TILE := TILE * 0.5
 
 var ui: CanvasLayer
 var facing := Vector2i(0, 1)
@@ -135,7 +137,7 @@ func _celula_alvo() -> Vector2i:
 
 
 func _perto(c: Vector2i) -> bool:
-	return Vector2(c * TILE + Vector2i(16, 16)).distance_to(position) < TILE * 2.5
+	return (Vector2(c) * TILE + Vector2(HALF_TILE, HALF_TILE)).distance_to(position) < TILE * 2.5
 
 
 func _anda(p: Vector2) -> bool:
