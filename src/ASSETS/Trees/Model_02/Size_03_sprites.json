@@ -1,0 +1,183 @@
+{
+  "source": "Size_03.png",
+  "image_size": [
+    144,
+    160
+  ],
+  "generated_by": "tools/generate_sprite_manifest.py",
+  "detection": {
+    "alpha_threshold": 8,
+    "merge_gap": 1,
+    "sprite_count": 7
+  },
+  "sprites": [
+    {
+      "x": 4,
+      "y": 4,
+      "w": 37,
+      "h": 76,
+      "visible_pixels": 1788,
+      "id": "size_03_001",
+      "name": "size_03_001",
+      "region": [
+        4,
+        4,
+        37,
+        76
+      ],
+      "suggested_type": "tree_or_large_bush",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        18,
+        75
+      ]
+    },
+    {
+      "x": 52,
+      "y": 4,
+      "w": 37,
+      "h": 76,
+      "visible_pixels": 1788,
+      "id": "size_03_002",
+      "name": "size_03_002",
+      "region": [
+        52,
+        4,
+        37,
+        76
+      ],
+      "suggested_type": "tree_or_large_bush",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        18,
+        75
+      ]
+    },
+    {
+      "x": 99,
+      "y": 6,
+      "w": 40,
+      "h": 74,
+      "visible_pixels": 819,
+      "id": "size_03_003",
+      "name": "size_03_003",
+      "region": [
+        99,
+        6,
+        40,
+        74
+      ],
+      "suggested_type": "tree_or_large_bush",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        20,
+        73
+      ]
+    },
+    {
+      "x": 4,
+      "y": 84,
+      "w": 37,
+      "h": 76,
+      "visible_pixels": 1788,
+      "id": "size_03_004",
+      "name": "size_03_004",
+      "region": [
+        4,
+        84,
+        37,
+        76
+      ],
+      "suggested_type": "tree_or_large_bush",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        18,
+        75
+      ]
+    },
+    {
+      "x": 52,
+      "y": 84,
+      "w": 37,
+      "h": 76,
+      "visible_pixels": 1788,
+      "id": "size_03_005",
+      "name": "size_03_005",
+      "region": [
+        52,
+        84,
+        37,
+        76
+      ],
+      "suggested_type": "tree_or_large_bush",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        18,
+        75
+      ]
+    },
+    {
+      "x": 117,
+      "y": 135,
+      "w": 6,
+      "h": 9,
+      "visible_pixels": 46,
+      "id": "size_03_006",
+      "name": "size_03_006",
+      "region": [
+        117,
+        135,
+        6,
+        9
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        3,
+        8
+      ]
+    },
+    {
+      "x": 117,
+      "y": 151,
+      "w": 6,
+      "h": 9,
+      "visible_pixels": 46,
+      "id": "size_03_007",
+      "name": "size_03_007",
+      "region": [
+        117,
+        151,
+        6,
+        9
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        3,
+        8
+      ]
+    }
+  ]
+}

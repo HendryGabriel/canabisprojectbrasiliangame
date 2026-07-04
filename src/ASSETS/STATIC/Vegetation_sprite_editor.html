@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vegetation Sprite Editor</title>
+  <title>Sprite Editor</title>
   <style>
     :root {
       color-scheme: dark;
@@ -148,7 +148,7 @@
     }
     .thumb, .preview {
       image-rendering: pixelated;
-      background-image: url("Vegetation.png");
+      background-image: var(--atlas-url, url("Vegetation.png"));
       background-repeat: no-repeat;
     }
     .item-title {
@@ -330,10 +330,12 @@
   <div class="app">
     <header>
       <div class="toolbar">
-        <h1>Vegetation Sprite Editor</h1>
+        <h1>Sprite Editor</h1>
         <span class="status" id="status">Carregando manifest...</span>
       </div>
       <div class="toolbar">
+        <input class="hidden" id="pngFile" type="file" accept="image/png,.png">
+        <button id="importPngBtn">Importar PNG</button>
         <input class="hidden" id="jsonFile" type="file" accept="application/json,.json">
         <button id="importBtn">Importar JSON</button>
         <button id="newBtn" class="primary">Novo sprite</button>
@@ -450,6 +452,7 @@
       drag: null,
       filter: "",
       sortByPosition: false,
+      imageName: IMAGE_NAME,
     };
 
     const el = {
@@ -463,6 +466,7 @@
       zoomLabel: document.getElementById("zoomLabel"),
       selectedPreview: document.getElementById("selectedPreview"),
       jsonFile: document.getElementById("jsonFile"),
+      pngFile: document.getElementById("pngFile"),
       inputs: {
         id: document.getElementById("idInput"),
         name: document.getElementById("nameInput"),
@@ -492,6 +496,13 @@
       return state.sprites.find(sprite => sprite.id === state.selectedId) || null;
     }
 
+    function getSpritePrefix() {
+      if (state.imageName) {
+        return state.imageName.replace(/\.[^/.]+$/, "").toLowerCase();
+      }
+      return "sprite";
+    }
+
     function normalizeSprite(sprite, index) {
       const region = Array.isArray(sprite.region)
         ? sprite.region
@@ -500,10 +511,15 @@
       const height = Math.max(1, Number(region[3] || sprite.h || 16));
       const x = clamp(Number(region[0] || sprite.x || 0), 0, Math.max(0, state.atlasWidth - width));
       const y = clamp(Number(region[1] || sprite.y || 0), 0, Math.max(0, state.atlasHeight - height));
+      
+      const prefix = getSpritePrefix();
+      const capPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      const suffix = String(index + 1).padStart(3, "0");
+      
       return {
         ...sprite,
-        id: sprite.id || `vegetation_${String(index + 1).padStart(3, "0")}`,
-        name: sprite.name || sprite.id || `vegetation_${String(index + 1).padStart(3, "0")}`,
+        id: sprite.id || `${prefix}_${suffix}`,
+        name: sprite.name || sprite.id || `${capPrefix}_${suffix}`,
         x,
         y,
         w: width,
@@ -529,6 +545,13 @@
 
     function loadManifest(data, sourceLabel) {
       state.manifest = data;
+      if (data.source) {
+        state.imageName = data.source;
+        if (!el.atlas.src.startsWith("blob:")) {
+          el.atlas.src = data.source;
+          document.documentElement.style.setProperty('--atlas-url', `url("${data.source}")`);
+        }
+      }
       state.atlasWidth = Number(data.image_size?.[0] || el.atlas.naturalWidth || 400);
       state.atlasHeight = Number(data.image_size?.[1] || el.atlas.naturalHeight || 432);
       state.sprites = (data.sprites || []).map(normalizeSprite);
@@ -727,22 +750,28 @@
     }
 
     function nextSpriteId() {
+      const prefix = getSpritePrefix();
       let index = state.sprites.length + 1;
-      let id = `vegetation_${String(index).padStart(3, "0")}`;
+      let id = `${prefix}_${String(index).padStart(3, "0")}`;
       while (state.sprites.some(sprite => sprite.id === id)) {
         index += 1;
-        id = `vegetation_${String(index).padStart(3, "0")}`;
+        id = `${prefix}_${String(index).padStart(3, "0")}`;
       }
       return id;
     }
 
     function addSprite(copyFrom = null) {
       const id = nextSpriteId();
+      const prefix = getSpritePrefix();
+      const capPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      const index = state.sprites.length;
+      const suffix = String(index + 1).padStart(3, "0");
+      const name = `${capPrefix}_${suffix}`;
       const source = copyFrom || { x: 0, y: 0, w: 16, h: 16 };
       const sprite = normalizeSprite({
         ...source,
         id,
-        name: id,
+        name: copyFrom ? (copyFrom.name ? `${copyFrom.name}_copia` : id) : name,
         x: clamp(source.x + (copyFrom ? 4 : 0), 0, state.atlasWidth - source.w),
         y: clamp(source.y + (copyFrom ? 4 : 0), 0, state.atlasHeight - source.h),
         region: [
@@ -779,7 +808,7 @@
       });
       const manifest = {
         ...base,
-        source: base.source || IMAGE_NAME,
+        source: state.imageName || base.source || IMAGE_NAME,
         image_size: [state.atlasWidth, state.atlasHeight],
         edited_by: "Vegetation_sprite_editor.html",
         detection: {
@@ -791,12 +820,15 @@
       const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = "Vegetation_sprites_adjusted.json";
+      const downloadName = state.imageName 
+        ? `${state.imageName.replace(/\.[^/.]+$/, "")}_sprites_adjusted.json`
+        : "sprites_adjusted.json";
+      link.download = downloadName;
       document.body.appendChild(link);
       link.click();
       URL.revokeObjectURL(link.href);
       link.remove();
-      setStatus("JSON ajustado exportado");
+      setStatus(`JSON ajustado exportado como ${downloadName}`);
     }
 
     function pointerToAtlas(event) {
@@ -930,6 +962,16 @@
       loadManifest(JSON.parse(await file.text()), file.name);
       event.target.value = "";
     });
+    document.getElementById("importPngBtn").addEventListener("click", () => el.pngFile.click());
+    el.pngFile.addEventListener("change", event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      state.imageName = file.name;
+      const objectURL = URL.createObjectURL(file);
+      el.atlas.src = objectURL;
+      document.documentElement.style.setProperty('--atlas-url', `url("${objectURL}")`);
+      event.target.value = "";
+    });
     for (const input of Object.values(el.inputs)) {
       input.addEventListener("change", applyInspectorChange);
       if (input.type !== "checkbox") input.addEventListener("keydown", event => {
@@ -937,17 +979,33 @@
       });
     }
 
+    let defaultManifestLoaded = false;
     el.atlas.addEventListener("load", () => {
       state.atlasWidth = el.atlas.naturalWidth || state.atlasWidth;
       state.atlasHeight = el.atlas.naturalHeight || state.atlasHeight;
-      loadDefaultManifest();
+      if (state.manifest) {
+        state.manifest.image_size = [state.atlasWidth, state.atlasHeight];
+      }
+      if (!defaultManifestLoaded) {
+        defaultManifestLoaded = true;
+        loadDefaultManifest();
+      } else {
+        setStatus(`Imagem ${state.imageName} carregada (${state.atlasWidth}x${state.atlasHeight})`);
+        renderAll();
+      }
     });
     el.atlas.addEventListener("error", () => {
-      setStatus("Nao consegui abrir Vegetation.png");
+      if (!defaultManifestLoaded) {
+        defaultManifestLoaded = true;
+        loadDefaultManifest();
+      } else {
+        setStatus(`Nao consegui abrir ${state.imageName}`);
+      }
     });
     if (el.atlas.complete && el.atlas.naturalWidth) {
       state.atlasWidth = el.atlas.naturalWidth;
       state.atlasHeight = el.atlas.naturalHeight;
+      defaultManifestLoaded = true;
       loadDefaultManifest();
     }
   </script>

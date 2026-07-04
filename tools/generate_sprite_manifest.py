@@ -112,10 +112,11 @@ def suggested_type(sprite: dict) -> str:
 
 
 def build_manifest(image_path: Path, image: Image.Image, components: list[dict], alpha: int, merge_gap: int) -> dict:
+    prefix = image_path.stem.lower()
     sprites = []
     for index, component in enumerate(components, start=1):
         sprite = dict(component)
-        sprite_id = f"vegetation_{index:03d}"
+        sprite_id = f"{prefix}_{index:03d}"
         sprite["id"] = sprite_id
         sprite["name"] = sprite_id
         sprite["region"] = [component["x"], component["y"], component["w"], component["h"]]
@@ -140,8 +141,11 @@ def build_manifest(image_path: Path, image: Image.Image, components: list[dict],
     }
 
 
+
 def write_html(output_path: Path, manifest: dict) -> None:
     image_name = html.escape(manifest["source"])
+    source_stem = Path(manifest["source"]).stem
+    title_name = html.escape(source_stem.capitalize())
     atlas_width = manifest["image_size"][0]
     atlas_height = manifest["image_size"][1]
     rows = []
@@ -189,7 +193,7 @@ def write_html(output_path: Path, manifest: dict) -> None:
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Vegetation Sprite Manifest</title>
+    <title>{title_name} Sprite Manifest</title>
     <style>
         :root {{
             color-scheme: dark;
@@ -301,7 +305,7 @@ def write_html(output_path: Path, manifest: dict) -> None:
 <body>
     <header>
         <div>
-            <h1>Vegetation Sprite Manifest</h1>
+            <h1>{title_name} Sprite Manifest</h1>
             <p>{manifest["detection"]["sprite_count"]} sprites detectados em {image_name}</p>
         </div>
         <p>alpha &gt; {manifest["detection"]["alpha_threshold"]}, merge gap {manifest["detection"]["merge_gap"]}</p>
@@ -344,8 +348,10 @@ def main() -> None:
     html_path = args.html or image_path.with_name(f"{image_path.stem}_sprites.html")
     data_js_path = args.data_js or image_path.with_name(f"{image_path.stem}_sprites_data.js")
     json_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    
+    var_name = f"{image_path.stem.upper()}_MANIFEST"
     data_js_path.write_text(
-        "window.VEGETATION_MANIFEST = "
+        f"window.{var_name} = "
         + json.dumps(manifest, indent=2, ensure_ascii=False)
         + ";\n",
         encoding="utf-8",

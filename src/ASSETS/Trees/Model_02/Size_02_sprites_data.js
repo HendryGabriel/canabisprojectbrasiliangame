@@ -1,0 +1,255 @@
+window.SIZE_02_MANIFEST = {
+  "source": "Size_02.png",
+  "image_size": [
+    128,
+    96
+  ],
+  "generated_by": "tools/generate_sprite_manifest.py",
+  "detection": {
+    "alpha_threshold": 8,
+    "merge_gap": 1,
+    "sprite_count": 10
+  },
+  "sprites": [
+    {
+      "x": 3,
+      "y": 1,
+      "w": 45,
+      "h": 95,
+      "visible_pixels": 2042,
+      "id": "size_02_001",
+      "name": "size_02_001",
+      "region": [
+        3,
+        1,
+        45,
+        95
+      ],
+      "suggested_type": "tree_or_large_bush",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        22,
+        94
+      ]
+    },
+    {
+      "x": 67,
+      "y": 1,
+      "w": 45,
+      "h": 95,
+      "visible_pixels": 2042,
+      "id": "size_02_002",
+      "name": "size_02_002",
+      "region": [
+        67,
+        1,
+        45,
+        95
+      ],
+      "suggested_type": "tree_or_large_bush",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        22,
+        94
+      ]
+    },
+    {
+      "x": 52,
+      "y": 22,
+      "w": 9,
+      "h": 10,
+      "visible_pixels": 60,
+      "id": "size_02_003",
+      "name": "size_02_003",
+      "region": [
+        52,
+        22,
+        9,
+        10
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        4,
+        9
+      ]
+    },
+    {
+      "x": 116,
+      "y": 22,
+      "w": 9,
+      "h": 10,
+      "visible_pixels": 60,
+      "id": "size_02_004",
+      "name": "size_02_004",
+      "region": [
+        116,
+        22,
+        9,
+        10
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        4,
+        9
+      ]
+    },
+    {
+      "x": 53,
+      "y": 43,
+      "w": 6,
+      "h": 5,
+      "visible_pixels": 22,
+      "id": "size_02_005",
+      "name": "size_02_005",
+      "region": [
+        53,
+        43,
+        6,
+        5
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        3,
+        4
+      ]
+    },
+    {
+      "x": 117,
+      "y": 43,
+      "w": 6,
+      "h": 5,
+      "visible_pixels": 22,
+      "id": "size_02_006",
+      "name": "size_02_006",
+      "region": [
+        117,
+        43,
+        6,
+        5
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        3,
+        4
+      ]
+    },
+    {
+      "x": 52,
+      "y": 70,
+      "w": 9,
+      "h": 10,
+      "visible_pixels": 60,
+      "id": "size_02_007",
+      "name": "size_02_007",
+      "region": [
+        52,
+        70,
+        9,
+        10
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        4,
+        9
+      ]
+    },
+    {
+      "x": 116,
+      "y": 70,
+      "w": 9,
+      "h": 10,
+      "visible_pixels": 60,
+      "id": "size_02_008",
+      "name": "size_02_008",
+      "region": [
+        116,
+        70,
+        9,
+        10
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        4,
+        9
+      ]
+    },
+    {
+      "x": 53,
+      "y": 91,
+      "w": 6,
+      "h": 5,
+      "visible_pixels": 22,
+      "id": "size_02_009",
+      "name": "size_02_009",
+      "region": [
+        53,
+        91,
+        6,
+        5
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        3,
+        4
+      ]
+    },
+    {
+      "x": 117,
+      "y": 91,
+      "w": 6,
+      "h": 5,
+      "visible_pixels": 22,
+      "id": "size_02_010",
+      "name": "size_02_010",
+      "region": [
+        117,
+        91,
+        6,
+        5
+      ],
+      "suggested_type": "tiny_decor",
+      "biomes": [],
+      "chance": 1.0,
+      "blocks_walk": false,
+      "blocks_build": false,
+      "pivot": [
+        3,
+        4
+      ]
+    }
+  ]
+};

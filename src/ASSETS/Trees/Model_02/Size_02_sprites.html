@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Size_02 Sprite Manifest</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: Inter, Segoe UI, Arial, sans-serif;
+            background: #181818;
+            color: #eeeeee;
+        }
+        body {
+            margin: 0;
+            padding: 24px;
+        }
+        header {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            margin: 0 0 6px;
+            font-size: 24px;
+        }
+        p {
+            margin: 0;
+            color: #bbbbbb;
+        }
+        .atlas {
+            max-width: 100%;
+            image-rendering: pixelated;
+            background:
+                linear-gradient(45deg, #333 25%, transparent 25%),
+                linear-gradient(-45deg, #333 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #333 75%),
+                linear-gradient(-45deg, transparent 75%, #333 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+            border: 1px solid #444;
+            margin-bottom: 24px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+        .card {
+            background: #242424;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 10px;
+            min-width: 0;
+        }
+        .preview-shell {
+            display: grid;
+            place-items: center;
+            height: 88px;
+            margin-bottom: 8px;
+            overflow: hidden;
+            background:
+                linear-gradient(45deg, #303030 25%, transparent 25%),
+                linear-gradient(-45deg, #303030 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #303030 75%),
+                linear-gradient(-45deg, transparent 75%, #303030 75%);
+            background-color: #222;
+            background-size: 14px 14px;
+            background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+            border-radius: 4px;
+        }
+        .preview {
+            image-rendering: pixelated;
+            background-image: url("Size_02.png");
+            background-repeat: no-repeat;
+            clip-path: inset(0);
+        }
+        strong, span, code {
+            display: block;
+            overflow-wrap: anywhere;
+        }
+        span {
+            color: #bdbdbd;
+            font-size: 13px;
+            margin-top: 3px;
+        }
+        code {
+            color: #f2d18b;
+            font-size: 12px;
+            margin-top: 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #222;
+            border: 1px solid #3a3a3a;
+        }
+        th, td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #333;
+            text-align: left;
+            font-size: 13px;
+        }
+        th {
+            color: #ffffff;
+            background: #2b2b2b;
+            position: sticky;
+            top: 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Size_02 Sprite Manifest</h1>
+            <p>10 sprites detectados em Size_02.png</p>
+        </div>
+        <p>alpha &gt; 8, merge gap 1</p>
+    </header>
+    <img class="atlas" src="Size_02.png" alt="Atlas original">
+    <section class="grid">
+        
+            <article class="card">
+                <div class="preview-shell" style="min-height:301px;">
+                    <div class="preview" style="width:135px; height:285px; background-position:-9px -3px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_001</strong>
+                <span>tree_or_large_bush</span>
+                <code>3, 1, 45, 95</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:301px;">
+                    <div class="preview" style="width:135px; height:285px; background-position:-201px -3px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_002</strong>
+                <span>tree_or_large_bush</span>
+                <code>67, 1, 45, 95</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:27px; height:30px; background-position:-156px -66px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_003</strong>
+                <span>tiny_decor</span>
+                <code>52, 22, 9, 10</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:27px; height:30px; background-position:-348px -66px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_004</strong>
+                <span>tiny_decor</span>
+                <code>116, 22, 9, 10</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:18px; height:15px; background-position:-159px -129px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_005</strong>
+                <span>tiny_decor</span>
+                <code>53, 43, 6, 5</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:18px; height:15px; background-position:-351px -129px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_006</strong>
+                <span>tiny_decor</span>
+                <code>117, 43, 6, 5</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:27px; height:30px; background-position:-156px -210px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_007</strong>
+                <span>tiny_decor</span>
+                <code>52, 70, 9, 10</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:27px; height:30px; background-position:-348px -210px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_008</strong>
+                <span>tiny_decor</span>
+                <code>116, 70, 9, 10</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:18px; height:15px; background-position:-159px -273px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_009</strong>
+                <span>tiny_decor</span>
+                <code>53, 91, 6, 5</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:18px; height:15px; background-position:-351px -273px; background-size:384px 288px;"></div>
+                </div>
+                <strong>size_02_010</strong>
+                <span>tiny_decor</span>
+                <code>117, 91, 6, 5</code>
+            </article>
+            
+    </section>
+    <table>
+        <thead>
+            <tr>
+                <th>id</th>
+                <th>x</th>
+                <th>y</th>
+                <th>w</th>
+                <th>h</th>
+                <th>pixels</th>
+                <th>sugestao</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                <td>size_02_001</td>
+                <td>3</td>
+                <td>1</td>
+                <td>45</td>
+                <td>95</td>
+                <td>2042</td>
+                <td>tree_or_large_bush</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_002</td>
+                <td>67</td>
+                <td>1</td>
+                <td>45</td>
+                <td>95</td>
+                <td>2042</td>
+                <td>tree_or_large_bush</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_003</td>
+                <td>52</td>
+                <td>22</td>
+                <td>9</td>
+                <td>10</td>
+                <td>60</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_004</td>
+                <td>116</td>
+                <td>22</td>
+                <td>9</td>
+                <td>10</td>
+                <td>60</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_005</td>
+                <td>53</td>
+                <td>43</td>
+                <td>6</td>
+                <td>5</td>
+                <td>22</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_006</td>
+                <td>117</td>
+                <td>43</td>
+                <td>6</td>
+                <td>5</td>
+                <td>22</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_007</td>
+                <td>52</td>
+                <td>70</td>
+                <td>9</td>
+                <td>10</td>
+                <td>60</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_008</td>
+                <td>116</td>
+                <td>70</td>
+                <td>9</td>
+                <td>10</td>
+                <td>60</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_009</td>
+                <td>53</td>
+                <td>91</td>
+                <td>6</td>
+                <td>5</td>
+                <td>22</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+            <tr>
+                <td>size_02_010</td>
+                <td>117</td>
+                <td>91</td>
+                <td>6</td>
+                <td>5</td>
+                <td>22</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+        </tbody>
+    </table>
+</body>
+</html>
