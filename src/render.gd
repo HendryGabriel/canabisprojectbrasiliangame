@@ -58,10 +58,7 @@ const VEG_TRONCOS := [Rect2(197, 65, 34, 31), Rect2(196, 98, 39, 46)]
 const VEG_COPAS := [Rect2(2, 5, 43, 91), Rect2(50, 5, 43, 91), Rect2(98, 5, 43, 91), Rect2(146, 5, 43, 91)]
 # pedras CINZAS (obstaculo em cima da grama, some com E)
 const PEDRAS_CINZAS := [Rect2(131, 19, 26, 27), Rect2(161, 17, 31, 14), Rect2(144, 51, 15, 10)]
-# [atlas(0=rocks,1=veg), rect] — na grama so tufos de vegetacao (pedra virou obstaculo)
-const DECOR_GRAMA := [
-	[1, Rect2(260, 0, 9, 16)], [1, Rect2(276, 0, 11, 14)], [1, Rect2(243, 2, 9, 11)],
-]
+# [atlas(0=rocks,1=veg), rect] — so a areia tem decor (pedras marrons)
 const DECOR_AREIA := [
 	[0, Rect2(65, 17, 31, 14)], [0, Rect2(81, 68, 11, 9)], [0, Rect2(68, 69, 8, 7)],
 	[0, Rect2(48, 51, 15, 10)], [0, Rect2(36, 85, 8, 6)],
@@ -116,10 +113,6 @@ func _decor_do_chunk(cc: Vector2i) -> Array:
 				var tex2: Texture2D = _atlas[2]
 				var lado := float(TILE) * (0.9 + 0.25 * (Sim._h(x, y, 16) % 3))
 				lista.append({"a": 2, "src": Rect2(Vector2.ZERO, tex2.get_size()), "dst": Rect2(base.x - lado * 0.5, base.y - lado, lado, lado)})
-			elif t == Sim.T.GRAMA and Sim._h(x, y, 12) % 100 < 3:
-				var d: Array = DECOR_GRAMA[Sim._h(x, y, 13) % DECOR_GRAMA.size()]
-				var r: Rect2 = d[1]
-				lista.append({"a": d[0], "src": r, "dst": Rect2(base.x - r.size.x * 0.5, base.y - r.size.y, r.size.x, r.size.y)})
 			elif t == Sim.T.AREIA and Sim._h(x, y, 14) % 100 < 6:
 				var d2: Array = DECOR_AREIA[Sim._h(x, y, 15) % DECOR_AREIA.size()]
 				var r2: Rect2 = d2[1]
