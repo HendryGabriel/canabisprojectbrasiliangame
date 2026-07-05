@@ -249,21 +249,20 @@ func _draw_esteira(e: Dictionary, px: Rect2) -> void:
 	else:
 		draw_rect(Rect2(px.position, Vector2(2, TILE)), trilho, true)
 		draw_rect(Rect2(px.position + Vector2(TILE - 2, 0), Vector2(2, TILE)), trilho, true)
-	var sinal := 1.0 if (v.x + v.y) > 0.0 else -1.0
-	var eixo_ini := px.position.x if horizontal else px.position.y
-	# gomos do tread (linhas transversais a cada 6px, movendo com o fluxo)
-	var o := posmod(int(sinal * anim - eixo_ini), 6)
-	while o < TILE:
-		if horizontal:
-			draw_line(px.position + Vector2(o, 2), px.position + Vector2(o, TILE - 2), Color(0.24, 0.24, 0.28), 1.5)
-		else:
-			draw_line(px.position + Vector2(2, o), px.position + Vector2(TILE - 2, o), Color(0.24, 0.24, 0.28), 1.5)
-		o += 6
-	# chevron amarelo (1 por tile, correndo)
-	var oc := posmod(int(sinal * anim - eixo_ini), TILE)
-	var pt := Vector2(px.position.x + oc, c.y) if horizontal else Vector2(c.x, px.position.y + oc)
-	draw_line(pt - v * 2.5 + p * 3.0, pt + v * 2.5, Color(0.95, 0.78, 0.18, 0.95), 1.5)
-	draw_line(pt + v * 2.5, pt - v * 2.5 - p * 3.0, Color(0.95, 0.78, 0.18, 0.95), 1.5)
+	# fase LOCAL igual em todo tile (periodos dividem o tile: gomos 8px, chevron 16px)
+	# -> todas as esteiras animam em sincronia e o padrao emenda perfeito entre tiles,
+	# em qualquer direcao. Offset medido da borda de TRAS, andando na direcao do fluxo.
+	var tras := c - v * HALF_TILE
+	var ot := fmod(anim, 8.0)
+	for k in 3:
+		var og := ot + k * 8.0
+		if og < TILE:
+			var pg := tras + v * og
+			draw_line(pg + p * (HALF_TILE - 2.0), pg - p * (HALF_TILE - 2.0), COR_GOMO, 1.5)
+	# chevron amarelo (1 por tile, correndo em fase com os vizinhos)
+	var pt := tras + v * fmod(anim, float(TILE))
+	draw_line(pt - v * 2.5 + p * 3.0, pt + v * 2.5, COR_CHEVRON, 1.5)
+	draw_line(pt + v * 2.5, pt - v * 2.5 - p * 3.0, COR_CHEVRON, 1.5)
 	# tampas so onde a linha comeca/termina (vizinho nao e esteira)
 	var atras = Sim.ent_em(e["pos"] - Sim.DIRS[dir])
 	var frente = Sim.ent_em(e["pos"] + Sim.DIRS[dir])
@@ -312,15 +311,16 @@ func _draw_esteira_curva(c: Vector2, dir: int, lado: int, anim: float) -> void:
 	draw_colored_polygon(pts, COR_SUPERFICIE)
 	draw_arc(P, TILE - 1.0, -PI / 2.0, 0.0, 10, COR_TRILHO, 2.0)   # trilho externo
 	draw_arc(P, 1.5, -PI / 2.0, 0.0, 6, COR_TRILHO, 2.0)           # trilho interno
-	# gomos radiais correndo pelo arco (mesma velocidade linear da reta no raio medio)
-	var passo := PI / 8.0
-	var a0 := -PI / 2.0 + fmod(anim / 8.0, passo)
-	while a0 < 0.0:
-		var dv := Vector2(cos(a0), sin(a0))
-		draw_line(P + dv * 4.0, P + dv * (TILE - 3.0), COR_GOMO, 1.5)
-		a0 += passo
-	# chevron seguindo o arco, apontando na tangente (sentido do fluxo)
-	var ac := -PI / 2.0 + fmod(anim / 8.0, PI / 2.0)
+	# gomos radiais em fase com as retas: mesma fracao do caminho -> emenda sincronizada
+	# (2 gomos por tile na reta = 2 por arco; chevron 1 por tile = 1 por arco)
+	var a0 := -PI / 2.0 + fmod(anim, 8.0) / 8.0 * (PI / 4.0)
+	for k in 2:
+		var ag := a0 + k * PI / 4.0
+		if ag < 0.0:
+			var dv := Vector2(cos(ag), sin(ag))
+			draw_line(P + dv * 4.0, P + dv * (TILE - 3.0), COR_GOMO, 1.5)
+	# chevron seguindo o arco, na mesma fracao do caminho das retas
+	var ac := -PI / 2.0 + fmod(anim, float(TILE)) / TILE * (PI / 2.0)
 	var pm := P + Vector2(cos(ac), sin(ac)) * HALF_TILE
 	var tg := Vector2(-sin(ac), cos(ac))
 	var pp := Vector2(cos(ac), sin(ac))
