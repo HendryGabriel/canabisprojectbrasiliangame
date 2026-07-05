@@ -77,7 +77,6 @@ func _carrega_atlases() -> void:
 	var ar: Image = load("res://src/ASSETS/STATIC/arado.png").get_image()
 	ar.convert(Image.FORMAT_RGBA8)
 	_arado = ImageTexture.create_from_image(ar.get_region(ar.get_used_rect()))  # corta o fundo
-	_bake_esteira()
 	# mato limpo muda o terreno -> invalida o cache de decor daquele chunk
 	Sim.mato_limpo.connect(func(cell: Vector2i):
 		_decor_chunks.erase(Vector2i(Sim._fdiv(cell.x, Sim.CHUNK), Sim._fdiv(cell.y, Sim.CHUNK))))
@@ -218,35 +217,64 @@ func _draw_ent(e: Dictionary) -> void:
 
 # ---------------- esteira / cano / poco ----------------
 
-var _esteira_frames: Array = []  # 5 frames gerados do sprite (rolagem com wrap)
-
-func _bake_esteira() -> void:
-	# o sprite e um segmento unico: deslocar o conteudo verticalmente com wrap
-	# gera os 5 quadros da animacao "andando pra frente" (sprite aponta pro Norte)
-	var src: Image = load("res://src/ASSETS/STATIC/esteira.png").get_image()
-	src.convert(Image.FORMAT_RGBA8)
-	var w := src.get_width()
-	var h := src.get_height()
-	for i in 5:
-		var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-		var off := i * h / 5
-		img.blit_rect(src, Rect2i(0, off, w, h - off), Vector2i(0, 0))
-		img.blit_rect(src, Rect2i(0, 0, w, off), Vector2i(0, h - off))
-		_esteira_frames.append(ImageTexture.create_from_image(img))
-
-
 func _draw_esteira(e: Dictionary, px: Rect2) -> void:
+	# estilo Factorio: superficie escura CONTINUA entre tiles (tampa so nas pontas da
+	# linha), gomos e chevrons amarelos animados correndo na direcao do fluxo.
+	# Posicoes calculadas em coordenada de MUNDO -> tiles vizinhos emendam sem costura.
+	var dir: int = e["dir"]
+	var v := Vector2(Sim.DIRS[dir])
+	var p := Vector2(-v.y, v.x)
 	var c := px.get_center()
-	var v := Vector2(Sim.DIRS[e["dir"]])
-	# frame avanca com o relogio da sim; rotacao aponta o sprite pra direcao da esteira
-	var frame := int((Sim.tick * Sim.FRAMES_POR_TICK + Sim._frame_acc) / 4) % 5
-	draw_set_transform(c, e["dir"] * PI / 2.0, Vector2.ONE)
-	draw_texture_rect(_esteira_frames[frame], Rect2(-HALF_TILE, -HALF_TILE, TILE, TILE), false)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var horizontal := dir == 1 or dir == 3
+	draw_rect(px, Color(0.13, 0.13, 0.15), true)  # superficie
+	# trilhos laterais (bordas perpendiculares ao fluxo)
+	var trilho := Color(0.55, 0.53, 0.48)
+	if horizontal:
+		draw_rect(Rect2(px.position, Vector2(TILE, 2)), trilho, true)
+		draw_rect(Rect2(px.position + Vector2(0, TILE - 2), Vector2(TILE, 2)), trilho, true)
+	else:
+		draw_rect(Rect2(px.position, Vector2(2, TILE)), trilho, true)
+		draw_rect(Rect2(px.position + Vector2(TILE - 2, 0), Vector2(2, TILE)), trilho, true)
+	# animacao no relogio da sim (mundo todo em fase)
+	var anim := (Sim.tick * Sim.FRAMES_POR_TICK + Sim._frame_acc) * 0.35
+	var sinal := 1.0 if (v.x + v.y) > 0.0 else -1.0
+	var eixo_ini := px.position.x if horizontal else px.position.y
+	# gomos do tread (linhas transversais a cada 6px, movendo com o fluxo)
+	var o := posmod(int(sinal * anim - eixo_ini), 6)
+	while o < TILE:
+		if horizontal:
+			draw_line(px.position + Vector2(o, 2), px.position + Vector2(o, TILE - 2), Color(0.24, 0.24, 0.28), 1.5)
+		else:
+			draw_line(px.position + Vector2(2, o), px.position + Vector2(TILE - 2, o), Color(0.24, 0.24, 0.28), 1.5)
+		o += 6
+	# chevron amarelo (1 por tile, correndo)
+	var oc := posmod(int(sinal * anim - eixo_ini), TILE)
+	var pt := Vector2(px.position.x + oc, c.y) if horizontal else Vector2(c.x, px.position.y + oc)
+	draw_line(pt - v * 2.5 + p * 3.0, pt + v * 2.5, Color(0.95, 0.78, 0.18, 0.95), 1.5)
+	draw_line(pt + v * 2.5, pt - v * 2.5 - p * 3.0, Color(0.95, 0.78, 0.18, 0.95), 1.5)
+	# tampas so onde a linha comeca/termina (vizinho nao e esteira)
+	var atras = Sim.ent_em(e["pos"] - Sim.DIRS[dir])
+	var frente = Sim.ent_em(e["pos"] + Sim.DIRS[dir])
+	if atras == null or atras["t"] != "esteira":
+		_tampa_esteira(px, -v, trilho)
+	if frente == null or frente["t"] != "esteira":
+		_tampa_esteira(px, v, trilho)
 	if e["item"] != "":
 		# interpolacao suave entre ticks (GDD §9: sim discreta, visual fluido)
 		var frac := clampf((e["prog"] + Sim._frame_acc / float(Sim.FRAMES_POR_TICK)) / Sim.BELT_T, 0.0, 1.0)
 		_draw_item(c + v * (frac - 0.5) * TILE, e["item"])
+
+
+func _tampa_esteira(px: Rect2, lado: Vector2, cor: Color) -> void:
+	# barra na borda apontada por `lado` (fecha a ponta da linha de esteiras)
+	if lado.x > 0.0:
+		draw_rect(Rect2(px.position + Vector2(TILE - 3, 0), Vector2(3, TILE)), cor, true)
+	elif lado.x < 0.0:
+		draw_rect(Rect2(px.position, Vector2(3, TILE)), cor, true)
+	elif lado.y > 0.0:
+		draw_rect(Rect2(px.position + Vector2(0, TILE - 3), Vector2(TILE, 3)), cor, true)
+	else:
+		draw_rect(Rect2(px.position, Vector2(TILE, 3)), cor, true)
 
 
 func _draw_cano(e: Dictionary, px: Rect2) -> void:
