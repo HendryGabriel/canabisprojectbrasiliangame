@@ -126,12 +126,14 @@ func _unhandled_input(ev: InputEvent) -> void:
 			ui.toggle_shop()
 		elif e != null and e["t"] != "bancada":
 			Sim.cmd_interact(alvo)
+		elif e == null and Sim.terreno_em(alvo) == Sim.T.MATO:
+			Sim.cmd_interact(alvo)  # limpa o mato
 
 
 func _celula_alvo() -> Vector2i:
 	# mira: celula do mouse se perto; senao a celula a frente do avatar
 	var m := Vector2i((get_global_mouse_position() / TILE).floor())
-	if _perto(m) and Sim.ent_em(m) != null:
+	if _perto(m) and (Sim.ent_em(m) != null or Sim.terreno_em(m) == Sim.T.MATO):
 		return m
 	return Vector2i((position / TILE).floor()) + facing
 
@@ -302,7 +304,7 @@ func _draw() -> void:
 	
 	# Realce da celula alvo de interacao (mantido do original)
 	var alvo := _celula_alvo()
-	if _perto(alvo) and Sim.ent_em(alvo) != null:
+	if _perto(alvo) and (Sim.ent_em(alvo) != null or Sim.terreno_em(alvo) == Sim.T.MATO):
 		draw_rect(Rect2(Vector2(alvo * TILE) - position, Vector2(TILE, TILE)), Color(1, 1, 1, 0.5), false, 2.0)
 
 

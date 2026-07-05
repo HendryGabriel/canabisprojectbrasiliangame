@@ -55,25 +55,29 @@ func _process(delta: float) -> void:
 
 const VEG_TRONCOS := [Rect2(197, 65, 34, 31), Rect2(196, 98, 39, 46)]
 const VEG_COPAS := [Rect2(2, 5, 43, 91), Rect2(50, 5, 43, 91), Rect2(98, 5, 43, 91), Rect2(146, 5, 43, 91)]
-# [atlas(0=rocks,1=veg), rect] — decors pequenos de grama e areia
+# [atlas(0=rocks,1=veg), rect] — pedras CINZAS na grama, MARRONS so na areia
 const DECOR_GRAMA := [
-	[1, Rect2(260, 0, 9, 16)], [1, Rect2(276, 0, 11, 14)], [1, Rect2(243, 2, 9, 11)],
-	[1, Rect2(293, 3, 9, 11)], [1, Rect2(308, 4, 8, 10)], [0, Rect2(65, 17, 31, 14)],
-	[0, Rect2(48, 51, 15, 10)], [0, Rect2(81, 68, 11, 9)], [0, Rect2(35, 53, 10, 7)],
+	[0, Rect2(161, 17, 31, 14)], [0, Rect2(177, 68, 11, 9)], [0, Rect2(164, 69, 8, 7)],
+	[0, Rect2(131, 53, 10, 7)], [0, Rect2(144, 51, 15, 10)], [0, Rect2(161, 100, 11, 9)],
+	[1, Rect2(260, 0, 9, 16)], [1, Rect2(276, 0, 11, 14)],
 ]
 const DECOR_AREIA := [
-	[0, Rect2(84, 37, 8, 6)], [0, Rect2(68, 69, 8, 7)], [0, Rect2(52, 70, 7, 5)],
-	[0, Rect2(65, 100, 11, 9)], [0, Rect2(36, 85, 8, 6)],
+	[0, Rect2(65, 17, 31, 14)], [0, Rect2(81, 68, 11, 9)], [0, Rect2(68, 69, 8, 7)],
+	[0, Rect2(48, 51, 15, 10)], [0, Rect2(36, 85, 8, 6)],
 ]
 
-var _atlas: Array = [null, null]  # [rocks, vegetation]
-var _decor_chunks := {}           # Vector2i -> Array de {a, src, dst}
+var _atlas: Array = [null, null, null]  # [rocks, vegetation, tallgrass]
+var _decor_chunks := {}                 # Vector2i -> Array de {a, src, dst}
 
 
 func _carrega_atlases() -> void:
 	# ImageTexture recriada: CompressedTexture2D renderiza branco (mesmo bug das maquinas)
 	_atlas[0] = ImageTexture.create_from_image(load("res://src/ASSETS/STATIC/Rocks.png").get_image())
 	_atlas[1] = ImageTexture.create_from_image(load("res://src/ASSETS/STATIC/Vegetation.png").get_image())
+	_atlas[2] = ImageTexture.create_from_image(load("res://src/ASSETS/EARLYGAME/TALLGRASS.png").get_image())
+	# mato limpo muda o terreno -> invalida o cache de decor daquele chunk
+	Sim.mato_limpo.connect(func(cell: Vector2i):
+		_decor_chunks.erase(Vector2i(Sim._fdiv(cell.x, Sim.CHUNK), Sim._fdiv(cell.y, Sim.CHUNK))))
 
 
 func _decor_do_chunk(cc: Vector2i) -> Array:
@@ -86,14 +90,19 @@ func _decor_do_chunk(cc: Vector2i) -> Array:
 			var base := Vector2((x + 0.5) * TILE, (y + 1) * TILE)  # centro-baixo do tile
 			if t == Sim.T.ARVORE:
 				var tr: Rect2 = VEG_TRONCOS[Sim._h(x, y, 10) % VEG_TRONCOS.size()]
-				var co: Rect2 = VEG_COPAS[Sim._h(x, y, 11) % VEG_COPAS.size()]
+				# copa com cor coerente por regiao (floresta inteira parecida, nao salada)
+				var co: Rect2 = VEG_COPAS[Sim._h(x >> 3, y >> 3, 11) % VEG_COPAS.size()]
 				var th := TILE * 1.5
 				var tw := tr.size.x * th / tr.size.y
 				var ch := TILE * 2.7
 				var cw := co.size.x * ch / co.size.y
 				lista.append({"a": 1, "src": tr, "dst": Rect2(base.x - tw * 0.5, base.y - th, tw, th)})
 				lista.append({"a": 1, "src": co, "dst": Rect2(base.x - cw * 0.5, base.y - th * 0.6 - ch, cw, ch)})
-			elif t == Sim.T.GRAMA and Sim._h(x, y, 12) % 100 < 7:
+			elif t == Sim.T.MATO:
+				var tex2: Texture2D = _atlas[2]
+				var lado := float(TILE) * (0.9 + 0.25 * (Sim._h(x, y, 16) % 3))
+				lista.append({"a": 2, "src": Rect2(Vector2.ZERO, tex2.get_size()), "dst": Rect2(base.x - lado * 0.5, base.y - lado, lado, lado)})
+			elif t == Sim.T.GRAMA and Sim._h(x, y, 12) % 100 < 3:
 				var d: Array = DECOR_GRAMA[Sim._h(x, y, 13) % DECOR_GRAMA.size()]
 				var r: Rect2 = d[1]
 				lista.append({"a": d[0], "src": r, "dst": Rect2(base.x - r.size.x * 0.5, base.y - r.size.y, r.size.x, r.size.y)})

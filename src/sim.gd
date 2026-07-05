@@ -6,13 +6,14 @@ extends Node
 
 signal msg(texto: String)
 signal vitoria_sig
+signal mato_limpo(cell: Vector2i)
 
 const TICK_HZ := 10
 const FRAMES_POR_TICK := 6  # 60 fps fisica / 10 ticks
 const BELT_T := 3           # ticks por celula de esteira
 const DIRS := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]  # N E S O
 
-enum T { GRAMA, AGUA, ARVORE, AREIA, PISO, BECO, CIDADE }
+enum T { GRAMA, AGUA, ARVORE, AREIA, PISO, BECO, CIDADE, MATO }
 
 var tick := 0
 var money := 80
@@ -24,6 +25,7 @@ var vendas := {}         # produto -> total vendido
 var venceu := false
 
 var _chunks := {}        # Vector2i -> PackedByteArray (cache do terreno procedural)
+var _limpo := {}         # celulas de mato limpas pelo player (estado da sim, entra no hash)
 var next_id := 1
 var ents := {}           # id -> Dictionary
 var grid := {}           # Vector2i -> id (toda celula coberta)
@@ -84,7 +86,10 @@ func terreno_em(c: Vector2i) -> int:
 	if c.y < 0:
 		return T.CIDADE
 	var cc := Vector2i(_fdiv(c.x, CHUNK), _fdiv(c.y, CHUNK))
-	return pegar_chunk(cc)[posmod(c.y, CHUNK) * CHUNK + posmod(c.x, CHUNK)]
+	var t: int = pegar_chunk(cc)[posmod(c.y, CHUNK) * CHUNK + posmod(c.x, CHUNK)]
+	if t == T.MATO and _limpo.has(c):
+		return T.GRAMA  # mato ja limpo pelo player
+	return t
 
 
 func dentro_do_mapa(c: Vector2i) -> bool:
@@ -99,37 +104,51 @@ func _gen_tile(x: int, y: int) -> int:
 			return T.PISO   # casa
 		if x >= 0 and x < 2 and y >= 4 and y < 12:
 			return T.BECO   # beco escuro
-		if x >= 30 and x < 36 and y >= 7 and y < 11:
-			return T.AGUA   # lago garantido perto da casa
-		if x >= 29 and x < 38 and y >= 25 and y < 31:
-			return T.AREIA  # areial garantido perto da casa
-		if x >= 3 and x < 23 and y >= 23 and y < 33 and (x * 7 + y * 13) % 7 == 0:
-			return T.ARVORE # bosque garantido perto da casa
+		# lago garantido (blob organico, com praia fina)
+		if _d2(x, y, 32, 8) <= 7 or _d2(x, y, 34, 9) <= 5:
+			return T.AGUA
+		if _d2(x, y, 32, 8) <= 13 or _d2(x, y, 34, 9) <= 10:
+			return T.AREIA
+		if _d2(x, y, 33, 27) <= 14:
+			return T.AREIA  # areial garantido
+		if x >= 3 and x < 23 and y >= 23 and y < 33 and (x * 7 + y * 13) % 9 == 0:
+			return T.ARVORE # bosque garantido (esparso)
+		# mato leve no quintal, longe da casa/porta (nao atrapalha o tutorial)
+		if (x >= 16 or y >= 16) and _h(x, y, 21) % 100 < 6:
+			return T.MATO
 		return T.GRAMA
-	# lagos: 1 possivel por supercelula de 24x24, com raio variavel; areia na borda
+	# lagos raros e espacados (1 possivel por supercelula de 32x32), praia fina
 	var melhor := 0x7fffffffffffffff
 	var raio := 0
-	var sx0 := _fdiv(x, 24)
-	var sy0 := _fdiv(y, 24)
+	var sx0 := _fdiv(x, 32)
+	var sy0 := _fdiv(y, 32)
 	for sy in range(sy0 - 1, sy0 + 2):
 		for sx in range(sx0 - 1, sx0 + 2):
-			if _h(sx, sy, 1) % 100 < 24:
-				var cx := sx * 24 + 5 + _h(sx, sy, 2) % 14
-				var cy := sy * 24 + 5 + _h(sx, sy, 3) % 14
+			if _h(sx, sy, 1) % 100 < 12:
+				var cx := sx * 32 + 8 + _h(sx, sy, 2) % 16
+				var cy := sy * 32 + 8 + _h(sx, sy, 3) % 16
 				var d := (x - cx) * (x - cx) + (y - cy) * (y - cy)
 				if d < melhor:
 					melhor = d
 					raio = 3 + _h(sx, sy, 4) % 4
 	if melhor <= raio * raio:
 		return T.AGUA
-	if melhor <= (raio + 2) * (raio + 2):
+	if melhor <= (raio + 1) * (raio + 1):
 		return T.AREIA
-	# florestas: densidade por regiao de 16x16, arvore sorteada por tile
-	var f := _h(x >> 4, y >> 4, 5) % 100
-	var dens := 12 if f < 35 else (4 if f < 70 else 0)
+	# florestas em manchas (regiao 8x8 define mata fechada / esparsa / campo aberto)
+	var f := _h(x >> 3, y >> 3, 5) % 100
+	var dens := 20 if f < 15 else (3 if f < 45 else 0)
 	if dens > 0 and _h(x, y, 6) % 100 < dens:
 		return T.ARVORE
+	# mato alto em manchas — o player limpa com E pra liberar o terreno
+	var m := _h(x >> 3, y >> 3, 20) % 100
+	if _h(x, y, 21) % 100 < (22 if m < 30 else 4):
+		return T.MATO
 	return T.GRAMA
+
+
+static func _d2(x: int, y: int, cx: int, cy: int) -> int:
+	return (x - cx) * (x - cx) + (y - cy) * (y - cy)
 
 
 static func _h(x: int, y: int, sal: int) -> int:
@@ -618,10 +637,14 @@ func motivo_nao_construir(t: String, pos: Vector2i) -> String:
 					if ter != T.AREIA:
 						return "Coloque em cima da areia"
 				"canteiro":
+					if ter == T.MATO:
+						return "Limpe o mato primeiro (E nele)"
 					if ter != T.GRAMA:
 						return "Canteiro só na grama"
 				_:
-					if ter == T.AGUA or ter == T.ARVORE:
+					if ter == T.MATO:
+						return "Limpe o mato primeiro (E nele)"
+					if ter == T.AGUA or ter == T.ARVORE or ter == T.CIDADE:
 						return "Terreno inválido"
 	if t == "poco":
 		var tem_agua := false
@@ -676,6 +699,9 @@ func cmd_remove(pos: Vector2i) -> bool:
 func cmd_interact(pos: Vector2i) -> void:
 	var e = ent_em(pos)
 	if e == null:
+		if terreno_em(pos) == T.MATO:
+			_limpo[pos] = true  # limpa o mato, libera o terreno
+			mato_limpo.emit(pos)
 		return
 	match e["t"]:
 		"traficante":
@@ -809,7 +835,9 @@ func state_hash() -> int:
 	# mesmo input -> mesmo hash em toda maquina, todo tick (GDD §9)
 	var chaves := ents.keys()
 	chaves.sort()
-	var s := "%d|%d|%d|%d|%s" % [tick, money, heat, tier, str(inv)]
+	var limpos := _limpo.keys()
+	limpos.sort()
+	var s := "%d|%d|%d|%d|%s|%s" % [tick, money, heat, tier, str(inv), str(limpos)]
 	for id in chaves:
 		s += str(ents[id])
 	return hash(s)

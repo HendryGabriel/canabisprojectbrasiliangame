@@ -346,12 +346,13 @@ func _tem_prod(prod: String) -> bool:
 # ---------------- hover: o que essa coisa esta fazendo? ----------------
 
 func _atualiza_hover() -> void:
-	var e = Sim.ent_em(_mouse_cell())
-	if e == null or build_type != "" or _shop.visible:
+	var mc := _mouse_cell()
+	var e = Sim.ent_em(mc)
+	if build_type != "" or _shop.visible or (e == null and Sim.terreno_em(mc) != Sim.T.MATO):
 		_hover.visible = false
 		return
 	_hover.visible = true
-	_hover_lbl.text = _info_ent(e)
+	_hover_lbl.text = _info_ent(e) if e != null else "Mato alto — aperte E pra limpar o terreno"
 	_hover.reset_size()
 	var mp := get_viewport().get_mouse_position() + Vector2(18, 18)
 	var tela := get_viewport().get_visible_rect().size
