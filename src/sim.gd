@@ -13,7 +13,7 @@ const FRAMES_POR_TICK := 6  # 60 fps fisica / 10 ticks
 const BELT_T := 3           # ticks por celula de esteira
 const DIRS := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]  # N E S O
 
-enum T { GRAMA, AGUA, ARVORE, AREIA, PISO, BECO, CIDADE, MATO }
+enum T { GRAMA, AGUA, ARVORE, AREIA, PISO, BECO, CIDADE, MATO, PEDRA }
 
 var tick := 0
 var money := 80
@@ -87,8 +87,8 @@ func terreno_em(c: Vector2i) -> int:
 		return T.CIDADE
 	var cc := Vector2i(_fdiv(c.x, CHUNK), _fdiv(c.y, CHUNK))
 	var t: int = pegar_chunk(cc)[posmod(c.y, CHUNK) * CHUNK + posmod(c.x, CHUNK)]
-	if t == T.MATO and _limpo.has(c):
-		return T.GRAMA  # mato ja limpo pelo player
+	if (t == T.MATO or t == T.PEDRA) and _limpo.has(c):
+		return T.GRAMA  # obstaculo ja removido pelo player
 	return t
 
 
@@ -113,9 +113,12 @@ func _gen_tile(x: int, y: int) -> int:
 			return T.AREIA  # areial garantido
 		if x >= 3 and x < 23 and y >= 23 and y < 33 and (x * 7 + y * 13) % 9 == 0:
 			return T.ARVORE # bosque garantido (esparso)
-		# mato leve no quintal, longe da casa/porta (nao atrapalha o tutorial)
-		if (x >= 16 or y >= 16) and _h(x, y, 21) % 100 < 6:
-			return T.MATO
+		# mato e pedras leves no quintal, longe da casa/porta (nao atrapalha o tutorial)
+		if x >= 16 or y >= 16:
+			if _h(x, y, 21) % 100 < 6:
+				return T.MATO
+			if _h(x, y, 22) % 100 < 3:
+				return T.PEDRA
 		return T.GRAMA
 	# lagos raros e espacados (1 possivel por supercelula de 32x32), praia fina
 	var melhor := 0x7fffffffffffffff
@@ -135,15 +138,21 @@ func _gen_tile(x: int, y: int) -> int:
 		return T.AGUA
 	if melhor <= (raio + 1) * (raio + 1):
 		return T.AREIA
+	# vegetacao nunca nasce colada na agua (copa nao pode pender por cima do lago)
+	var perto_da_agua := melhor <= (raio + 3) * (raio + 3)
 	# florestas em manchas (regiao 8x8 define mata fechada / esparsa / campo aberto)
-	var f := _h(x >> 3, y >> 3, 5) % 100
-	var dens := 20 if f < 15 else (3 if f < 45 else 0)
-	if dens > 0 and _h(x, y, 6) % 100 < dens:
-		return T.ARVORE
-	# mato alto em manchas — o player limpa com E pra liberar o terreno
-	var m := _h(x >> 3, y >> 3, 20) % 100
-	if _h(x, y, 21) % 100 < (22 if m < 30 else 4):
-		return T.MATO
+	if not perto_da_agua:
+		var f := _h(x >> 3, y >> 3, 5) % 100
+		var dens := 20 if f < 15 else (3 if f < 45 else 0)
+		if dens > 0 and _h(x, y, 6) % 100 < dens:
+			return T.ARVORE
+		# mato alto em manchas — o player limpa com E pra liberar o terreno
+		var m := _h(x >> 3, y >> 3, 20) % 100
+		if _h(x, y, 21) % 100 < (22 if m < 30 else 4):
+			return T.MATO
+	# pedras esparsas — obstaculo que o player tira com E
+	if _h(x, y, 22) % 100 < 2:
+		return T.PEDRA
 	return T.GRAMA
 
 
@@ -637,13 +646,13 @@ func motivo_nao_construir(t: String, pos: Vector2i) -> String:
 					if ter != T.AREIA:
 						return "Coloque em cima da areia"
 				"canteiro":
-					if ter == T.MATO:
-						return "Limpe o mato primeiro (E nele)"
+					if ter == T.MATO or ter == T.PEDRA:
+						return "Limpe o terreno primeiro (E no obstáculo)"
 					if ter != T.GRAMA:
 						return "Canteiro só na grama"
 				_:
-					if ter == T.MATO:
-						return "Limpe o mato primeiro (E nele)"
+					if ter == T.MATO or ter == T.PEDRA:
+						return "Limpe o terreno primeiro (E no obstáculo)"
 					if ter == T.AGUA or ter == T.ARVORE or ter == T.CIDADE:
 						return "Terreno inválido"
 	if t == "poco":
@@ -699,8 +708,9 @@ func cmd_remove(pos: Vector2i) -> bool:
 func cmd_interact(pos: Vector2i) -> void:
 	var e = ent_em(pos)
 	if e == null:
-		if terreno_em(pos) == T.MATO:
-			_limpo[pos] = true  # limpa o mato, libera o terreno
+		var ter := terreno_em(pos)
+		if ter == T.MATO or ter == T.PEDRA:
+			_limpo[pos] = true  # remove o obstaculo, libera o terreno
 			mato_limpo.emit(pos)
 		return
 	match e["t"]:

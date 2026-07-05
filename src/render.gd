@@ -54,12 +54,13 @@ func _process(delta: float) -> void:
 # em cache — por frame e so draw_texture_rect_region dos chunks visiveis.
 
 const VEG_TRONCOS := [Rect2(197, 65, 34, 31), Rect2(196, 98, 39, 46)]
+# copas: 0..2 = verdes, 3 = marrom (peso: verdes dominam)
 const VEG_COPAS := [Rect2(2, 5, 43, 91), Rect2(50, 5, 43, 91), Rect2(98, 5, 43, 91), Rect2(146, 5, 43, 91)]
-# [atlas(0=rocks,1=veg), rect] — pedras CINZAS na grama, MARRONS so na areia
+# pedras CINZAS (obstaculo em cima da grama, some com E)
+const PEDRAS_CINZAS := [Rect2(131, 19, 26, 27), Rect2(161, 17, 31, 14), Rect2(144, 51, 15, 10)]
+# [atlas(0=rocks,1=veg), rect] — na grama so tufos de vegetacao (pedra virou obstaculo)
 const DECOR_GRAMA := [
-	[0, Rect2(161, 17, 31, 14)], [0, Rect2(177, 68, 11, 9)], [0, Rect2(164, 69, 8, 7)],
-	[0, Rect2(131, 53, 10, 7)], [0, Rect2(144, 51, 15, 10)], [0, Rect2(161, 100, 11, 9)],
-	[1, Rect2(260, 0, 9, 16)], [1, Rect2(276, 0, 11, 14)],
+	[1, Rect2(260, 0, 9, 16)], [1, Rect2(276, 0, 11, 14)], [1, Rect2(243, 2, 9, 11)],
 ]
 const DECOR_AREIA := [
 	[0, Rect2(65, 17, 31, 14)], [0, Rect2(81, 68, 11, 9)], [0, Rect2(68, 69, 8, 7)],
@@ -90,14 +91,27 @@ func _decor_do_chunk(cc: Vector2i) -> Array:
 			var base := Vector2((x + 0.5) * TILE, (y + 1) * TILE)  # centro-baixo do tile
 			if t == Sim.T.ARVORE:
 				var tr: Rect2 = VEG_TRONCOS[Sim._h(x, y, 10) % VEG_TRONCOS.size()]
-				# copa com cor coerente por regiao (floresta inteira parecida, nao salada)
-				var co: Rect2 = VEG_COPAS[Sim._h(x >> 3, y >> 3, 11) % VEG_COPAS.size()]
-				var th := TILE * 1.5
+				# copa com cor coerente por regiao; 0 e 1 sao verdes, 2 e 3 amarronzadas
+				# -> 90% verde, 10% amarronzada ("mais verdinhos do que marrons")
+				var sorteio := Sim._h(x >> 3, y >> 3, 11) % 20
+				var co: Rect2 = VEG_COPAS[0]
+				if sorteio >= 9 and sorteio < 18:
+					co = VEG_COPAS[1]
+				elif sorteio == 18:
+					co = VEG_COPAS[2]
+				elif sorteio == 19:
+					co = VEG_COPAS[3]
+				var th := TILE * 1.6
 				var tw := tr.size.x * th / tr.size.y
-				var ch := TILE * 2.7
+				var ch := TILE * 3.6
 				var cw := co.size.x * ch / co.size.y
 				lista.append({"a": 1, "src": tr, "dst": Rect2(base.x - tw * 0.5, base.y - th, tw, th)})
-				lista.append({"a": 1, "src": co, "dst": Rect2(base.x - cw * 0.5, base.y - th * 0.6 - ch, cw, ch)})
+				lista.append({"a": 1, "src": co, "dst": Rect2(base.x - cw * 0.5, base.y - th * 0.7 - ch, cw, ch)})
+			elif t == Sim.T.PEDRA:
+				var pr: Rect2 = PEDRAS_CINZAS[Sim._h(x, y, 17) % PEDRAS_CINZAS.size()]
+				var ph := minf(TILE * 1.1, pr.size.y * TILE / 16.0)
+				var pw := pr.size.x * ph / pr.size.y
+				lista.append({"a": 0, "src": pr, "dst": Rect2(base.x - pw * 0.5, base.y - ph, pw, ph)})
 			elif t == Sim.T.MATO:
 				var tex2: Texture2D = _atlas[2]
 				var lado := float(TILE) * (0.9 + 0.25 * (Sim._h(x, y, 16) % 3))
@@ -117,7 +131,7 @@ func _draw_decor(vis: Rect2) -> void:
 	# ponytail: cache sem LRU — se passar do teto, limpa tudo e rebaka os visiveis (barato)
 	if _decor_chunks.size() > 600:
 		_decor_chunks.clear()
-	var alcance := vis.grow(TILE * 4)  # arvores vazam ~4 tiles pra cima do proprio chunk
+	var alcance := vis.grow(TILE * 6)  # arvores (copa grande) vazam ~5 tiles do proprio chunk
 	var c0 := Vector2i(Sim._fdiv(int(alcance.position.x / TILE), Sim.CHUNK), Sim._fdiv(int(alcance.position.y / TILE), Sim.CHUNK))
 	var c1 := Vector2i(Sim._fdiv(int(alcance.end.x / TILE), Sim.CHUNK), Sim._fdiv(int(alcance.end.y / TILE), Sim.CHUNK))
 	for cy in range(maxi(c0.y, 0), c1.y + 1):

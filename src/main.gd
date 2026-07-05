@@ -91,7 +91,7 @@ func _pinta_chunk(cc: Vector2i) -> void:
 			match t:
 				Sim.T.AGUA:
 					agua.append(cell)
-				Sim.T.GRAMA, Sim.T.ARVORE, Sim.T.MATO:
+				Sim.T.GRAMA, Sim.T.ARVORE, Sim.T.MATO, Sim.T.PEDRA:
 					_floor_base.set_cell(cell, FLOOR_SOURCE_ID, Vector2i(2, 10))
 					grama.append(cell)
 				Sim.T.AREIA:
