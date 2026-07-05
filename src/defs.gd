@@ -87,6 +87,13 @@ const RECEITAS := {
 	"extrator_areia": {"t": 60, "in": {}, "out": "areia", "n": 1},
 }
 
+# Sprites de maquina fornecidos (substituem o icone procedural no mundo e na hotbar).
+const MACHINE_SPRITES := {
+	"maq_pura": "res://src/ASSETS/MACHINE_ICONS/refine_weed.png",
+	"fab_seda": "res://src/ASSETS/MACHINE_ICONS/silk_machine.png",
+	"estufa_mini": "res://src/ASSETS/MACHINE_ICONS/mini_estufa.png",
+}
+
 # Estufas: consomem 1 semente + agua por ciclo, produzem buds (GDD §5).
 const ESTUFAS := {
 	"estufa_mini": {"t": 150, "agua": 20, "buds": 3},

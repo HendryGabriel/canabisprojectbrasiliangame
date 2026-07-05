@@ -555,7 +555,10 @@ class Slot extends Control:
 		var sel: bool = dono.build_type == tipo
 		var pode: bool = Sim.money >= d["custo"]
 		draw_rect(Rect2(1, 1, 52, 52), Color(0.10, 0.10, 0.14, 0.92), true)
-		Icons.desenha(self, tipo, Vector2(27, 28), 1.0)
+		if Defs.MACHINE_SPRITES.has(tipo):
+			draw_texture_rect(load(Defs.MACHINE_SPRITES[tipo]), Rect2(4, 4, 46, 46), false)
+		else:
+			Icons.desenha(self, tipo, Vector2(27, 28), 1.0)
 		if not pode:
 			draw_rect(Rect2(1, 1, 52, 52), Color(0, 0, 0, 0.55), true)
 		draw_rect(Rect2(1, 1, 52, 52), Color.YELLOW if sel else Color(0.42, 0.42, 0.48), false, 2.0 if sel else 1.0)

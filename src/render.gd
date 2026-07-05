@@ -277,20 +277,24 @@ func _draw_planta(base: Vector2, altura: float, cor: Color) -> void:
 
 
 func _draw_estufa(e: Dictionary, px: Rect2) -> void:
-	draw_rect(px.grow(-2), Color(0.55, 0.58, 0.55), true)               # base
-	draw_rect(px.grow(-4), Color(0.65, 0.85, 0.90, 0.75), true)          # vidro
-	for i in range(1, 4):                                                # caixilhos
-		var gx: float = px.position.x + px.size.x * i / 4.0
-		draw_line(Vector2(gx, px.position.y + 4), Vector2(gx, px.end.y - 4), Color.WHITE * Color(1, 1, 1, 0.6), 2.0)
-	draw_line(px.position + Vector2(4, px.size.y / 2), px.position + Vector2(px.size.x - 4, px.size.y / 2), Color(1, 1, 1, 0.6), 2.0)
 	var d: Dictionary = Defs.ESTUFAS[e["t"]]
 	var g: float = clampf(float(e["prog"]) / (d["t"] * 256), 0.0, 1.0)
 	var cor: Color = COR_CEPA.get(e.get("cepa_ciclo", ""), Color(0.3, 0.6, 0.3))
-	var n_plantas: int = 2 if e["t"] == "estufa_mini" else 4
-	for i in n_plantas:  # fileira de plantas crescendo com o ciclo
-		var bx: float = px.position.x + px.size.x * (i + 1) / (n_plantas + 1.0)
-		if e["prog"] > 0:
-			_draw_planta(Vector2(bx, px.end.y - 8), 4.0 + g * (px.size.y * 0.35), cor)
+	var tex := _sprite_maq(e["t"])
+	if tex != null:
+		draw_texture_rect(tex, px.grow(-1), false)  # sprite fornecido
+	else:
+		draw_rect(px.grow(-2), Color(0.55, 0.58, 0.55), true)               # base
+		draw_rect(px.grow(-4), Color(0.65, 0.85, 0.90, 0.75), true)          # vidro
+		for i in range(1, 4):                                                # caixilhos
+			var gx: float = px.position.x + px.size.x * i / 4.0
+			draw_line(Vector2(gx, px.position.y + 4), Vector2(gx, px.end.y - 4), Color.WHITE * Color(1, 1, 1, 0.6), 2.0)
+		draw_line(px.position + Vector2(4, px.size.y / 2), px.position + Vector2(px.size.x - 4, px.size.y / 2), Color(1, 1, 1, 0.6), 2.0)
+		var n_plantas: int = 2 if e["t"] == "estufa_mini" else 4
+		for i in n_plantas:  # fileira de plantas crescendo com o ciclo
+			var bx: float = px.position.x + px.size.x * (i + 1) / (n_plantas + 1.0)
+			if e["prog"] > 0:
+				_draw_planta(Vector2(bx, px.end.y - 8), 4.0 + g * (px.size.y * 0.35), cor)
 	draw_string(_fonte, px.position + Vector2(4, 14), "%s  sem:%d" % [("Estufa" if e["t"] == "estufa_mini" else "ESTUFA G"), e["sementes"].size()], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.1, 0.25, 0.1))
 	_barra_prog(px, e["prog"], d["t"] * 256)
 	_draw_chute_saida(e)
@@ -311,15 +315,18 @@ const MAQ_COR := {
 
 func _draw_maquina(e: Dictionary, px: Rect2) -> void:
 	var t: String = e["t"]
-	var cor: Color = MAQ_COR.get(t, Color.GRAY)
-	# corpo com "chassi"
-	draw_rect(px.grow(-2), cor.darkened(0.35), true)
-	draw_rect(px.grow(-4), cor, true)
-	draw_rect(px.grow(-2), cor.lightened(0.25), false, 2.0)
-	for canto in [px.position + Vector2(5, 5), Vector2(px.end.x - 5, px.position.y + 5), px.position + Vector2(5, px.size.y - 5), px.end - Vector2(5, 5)]:
-		draw_circle(canto, 1.5, cor.darkened(0.5))  # parafusos
-	var c := px.get_center()
-	_icone_maquina(t, c, px)
+	var tex := _sprite_maq(t)
+	if tex != null:
+		draw_texture_rect(tex, px.grow(-1), false)  # sprite fornecido cobre a maquina
+	else:
+		var cor: Color = MAQ_COR.get(t, Color.GRAY)
+		# corpo com "chassi"
+		draw_rect(px.grow(-2), cor.darkened(0.35), true)
+		draw_rect(px.grow(-4), cor, true)
+		draw_rect(px.grow(-2), cor.lightened(0.25), false, 2.0)
+		for canto in [px.position + Vector2(5, 5), Vector2(px.end.x - 5, px.position.y + 5), px.position + Vector2(5, px.size.y - 5), px.end - Vector2(5, 5)]:
+			draw_circle(canto, 1.5, cor.darkened(0.5))  # parafusos
+		_icone_maquina(t, px.get_center(), px)
 	# chip da cepa travada na linha (GDD §3)
 	if e.get("cepa", "") != "":
 		draw_circle(px.position + Vector2(8, 8), 5, COR_CEPA.get(e["cepa"], Color.WHITE))
@@ -341,6 +348,10 @@ func _draw_maquina(e: Dictionary, px: Rect2) -> void:
 
 func _icone_maquina(t: String, c: Vector2, _px: Rect2) -> void:
 	Icons.desenha(self, t, c, 1.0, false)  # mesmo icone da hotbar, sem o chassi
+
+
+func _sprite_maq(t: String) -> Texture2D:
+	return load(Defs.MACHINE_SPRITES[t]) if Defs.MACHINE_SPRITES.has(t) else null
 
 
 func _draw_bancada(e: Dictionary, px: Rect2) -> void:
