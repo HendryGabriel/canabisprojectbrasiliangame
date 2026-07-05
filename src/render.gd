@@ -20,6 +20,8 @@ const COR_CEPA := {
 var ui: CanvasLayer
 var _terrain_overlay: ImageTexture
 var _fonte: Font
+var _has_painted_water := false
+var _has_painted_interior_walls := false
 var _traficante_pos := Vector2.ZERO
 var _money_antes := -1
 var _floats: Array = []  # {pos, txt, ttl, cor}
@@ -27,10 +29,18 @@ var _floats: Array = []  # {pos, txt, ttl, cor}
 
 func _ready() -> void:
 	_fonte = ThemeDB.fallback_font
+	_update_painted_tile_layers_state()
 	_bake_terrain_overlay()
 	for id in Sim.ents:
 		if Sim.ents[id]["t"] == "traficante":
 			_traficante_pos = _cell_center(Sim.ents[id]["pos"])
+
+
+func _update_painted_tile_layers_state() -> void:
+	var water_layer := get_parent().get_node_or_null("Water") as TileMapLayer
+	var interior_walls_layer := get_parent().get_node_or_null("InteriorWalls") as TileMapLayer
+	_has_painted_water = water_layer != null and not water_layer.get_used_cells().is_empty()
+	_has_painted_interior_walls = interior_walls_layer != null and not interior_walls_layer.get_used_cells().is_empty()
 
 
 func _process(delta: float) -> void:
@@ -54,6 +64,8 @@ func _bake_terrain_overlay() -> void:
 		for y in Sim.H:
 			var cell: Vector2i = Vector2i(x, y)
 			var terrain: int = Sim.terreno_em(cell)
+			if terrain == Sim.T.AGUA and _has_painted_water:
+				continue
 			if terrain != Sim.T.AGUA and terrain != Sim.T.ARVORE:
 				continue
 			var tile: Image = _terrain_overlay_img(terrain, (x * 7 + y * 13) % 3)
@@ -91,7 +103,8 @@ func _terrain_overlay_img(terrain: int, variante: int) -> Image:
 func _draw() -> void:
 	if _terrain_overlay != null:
 		draw_texture_rect(_terrain_overlay, Rect2(0, 0, Sim.W * TILE, Sim.H * TILE), false)
-	_draw_casa()
+	if not _has_painted_interior_walls:
+		_draw_casa()
 	_draw_lotes()
 	# culling: so desenha o que a camera ve (fabricas grandes continuam a 60fps)
 	var vis: Rect2 = (get_canvas_transform().affine_inverse() * get_viewport_rect()).grow(TILE * 2)
