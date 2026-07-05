@@ -100,6 +100,19 @@ func _pinta_chunk(cc: Vector2i) -> void:
 					_floor_base.set_cell(cell, FLOOR_SOURCE_ID, Vector2i(17, 2))
 				Sim.T.BECO, Sim.T.CIDADE:
 					_floor_base.set_cell(cell, FLOOR_SOURCE_ID, Vector2i(7, 10))
+	# anel de 1 tile dos chunks vizinhos entra no connect: o autotile reavalia a
+	# borda e a transicao nao quebra na costura entre chunks (escadinha na areia)
+	var x0 := cc.x * Sim.CHUNK
+	var y0 := cc.y * Sim.CHUNK
+	for i in range(-1, Sim.CHUNK + 1):
+		for borda in [Vector2i(x0 + i, y0 - 1), Vector2i(x0 + i, y0 + Sim.CHUNK), Vector2i(x0 - 1, y0 + i), Vector2i(x0 + Sim.CHUNK, y0 + i)]:
+			if borda.y < 0:
+				continue
+			var tb := Sim.terreno_em(borda)
+			if tb == Sim.T.GRAMA or tb == Sim.T.ARVORE or tb == Sim.T.MATO or tb == Sim.T.PEDRA:
+				grama.append(borda)
+			elif tb == Sim.T.AGUA:
+				agua.append(borda)
 	if _floor_transitions != null and _floor_transitions.tile_set != null \
 			and _floor_transitions.tile_set.get_terrain_sets_count() > FLOOR_TERRAIN_SET and grama.size() > 0:
 		_floor_transitions.set_cells_terrain_connect(grama, FLOOR_TERRAIN_SET, TERRAIN_GRASS, false)
