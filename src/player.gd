@@ -12,7 +12,7 @@ var facing := Vector2i(0, 1)
 var _walk := 0.0  # fase da animacao de andar
 
 const ASSET_DIR := "res://Vector Parts/"
-const SPRITE_SCALE := 0.20
+const SPRITE_SCALE := 0.10  # proporcional ao mundo/tiles (personagem ~2 tiles)
 
 var tex_body := {}
 var tex_head := {}
@@ -152,8 +152,8 @@ func _anda(p: Vector2) -> bool:
 
 
 func _draw() -> void:
-	# 1. Desenha a sombra
-	draw_circle(Vector2(0, 8), 10, Color(0, 0, 0, 0.3))
+	# 1. Desenha a sombra (proporcional ao SPRITE_SCALE)
+	draw_circle(Vector2(0, SPRITE_SCALE * 40.0), SPRITE_SCALE * 50.0, Color(0, 0, 0, 0.3))
 	
 	# 2. Determina a direcao do sprite
 	var dir := _get_dir_string()
@@ -194,7 +194,7 @@ func _draw() -> void:
 		arm_rot = sin(t) * 0.05
 		leg_rot = 0.0
 	
-	var body_base_pos := Vector2(0, -3) + Vector2(0, body_bob) * SPRITE_SCALE
+	var body_base_pos := Vector2(0, -15.0 * SPRITE_SCALE) + Vector2(0, body_bob) * SPRITE_SCALE
 	var body_pos := body_base_pos
 	var body_rot := 0.0
 	
