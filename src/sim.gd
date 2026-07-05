@@ -120,9 +120,11 @@ func _gen_tile(x: int, y: int) -> int:
 			if _h(x, y, 22) % 100 < 3:
 				return T.PEDRA
 		return T.GRAMA
-	# lagos raros e espacados (1 possivel por supercelula de 32x32), praia fina
-	var melhor := 0x7fffffffffffffff
-	var raio := 0
+	# lagos raros e espacados: UNIAO de circulos (1 possivel por supercelula de 32x32).
+	# checar cada lago independente evita as "mordidas" quando dois lagos se encostam.
+	var agua := false
+	var praia := false
+	var perto_da_agua := false
 	var sx0 := _fdiv(x, 32)
 	var sy0 := _fdiv(y, 32)
 	for sy in range(sy0 - 1, sy0 + 2):
@@ -131,15 +133,17 @@ func _gen_tile(x: int, y: int) -> int:
 				var cx := sx * 32 + 8 + _h(sx, sy, 2) % 16
 				var cy := sy * 32 + 8 + _h(sx, sy, 3) % 16
 				var d := (x - cx) * (x - cx) + (y - cy) * (y - cy)
-				if d < melhor:
-					melhor = d
-					raio = 3 + _h(sx, sy, 4) % 4
-	if melhor <= raio * raio:
+				var r := 3 + _h(sx, sy, 4) % 4
+				if d <= r * r:
+					agua = true
+				elif d <= (r + 1) * (r + 1):
+					praia = true
+				if d <= (r + 3) * (r + 3):
+					perto_da_agua = true  # vegetacao nunca colada na agua
+	if agua:
 		return T.AGUA
-	if melhor <= (raio + 1) * (raio + 1):
+	if praia:
 		return T.AREIA
-	# vegetacao nunca nasce colada na agua (copa nao pode pender por cima do lago)
-	var perto_da_agua := melhor <= (raio + 3) * (raio + 3)
 	# florestas em manchas (regiao 8x8 define mata fechada / esparsa / campo aberto)
 	if not perto_da_agua:
 		var f := _h(x >> 3, y >> 3, 5) % 100
