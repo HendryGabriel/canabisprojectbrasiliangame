@@ -217,6 +217,12 @@ func _draw_ent(e: Dictionary) -> void:
 
 # ---------------- esteira / cano / poco ----------------
 
+const COR_SUPERFICIE := Color(0.13, 0.13, 0.15)
+const COR_GOMO := Color(0.24, 0.24, 0.28)
+const COR_TRILHO := Color(0.55, 0.53, 0.48)
+const COR_CHEVRON := Color(0.95, 0.78, 0.18, 0.95)
+
+
 func _draw_esteira(e: Dictionary, px: Rect2) -> void:
 	# estilo Factorio: superficie escura CONTINUA entre tiles (tampa so nas pontas da
 	# linha), gomos e chevrons amarelos animados correndo na direcao do fluxo.
@@ -225,18 +231,24 @@ func _draw_esteira(e: Dictionary, px: Rect2) -> void:
 	var v := Vector2(Sim.DIRS[dir])
 	var p := Vector2(-v.y, v.x)
 	var c := px.get_center()
+	var anim := (Sim.tick * Sim.FRAMES_POR_TICK + Sim._frame_acc) * 0.35
+	var curva := _curva_esteira(e, dir)
+	if curva != 0:
+		_draw_esteira_curva(c, dir, curva, anim)
+		if e["item"] != "":
+			var frac0 := clampf((e["prog"] + Sim._frame_acc / float(Sim.FRAMES_POR_TICK)) / Sim.BELT_T, 0.0, 1.0)
+			_draw_item(c + v * (frac0 - 0.5) * TILE, e["item"])
+		return
 	var horizontal := dir == 1 or dir == 3
-	draw_rect(px, Color(0.13, 0.13, 0.15), true)  # superficie
+	draw_rect(px, COR_SUPERFICIE, true)  # superficie
 	# trilhos laterais (bordas perpendiculares ao fluxo)
-	var trilho := Color(0.55, 0.53, 0.48)
+	var trilho := COR_TRILHO
 	if horizontal:
 		draw_rect(Rect2(px.position, Vector2(TILE, 2)), trilho, true)
 		draw_rect(Rect2(px.position + Vector2(0, TILE - 2), Vector2(TILE, 2)), trilho, true)
 	else:
 		draw_rect(Rect2(px.position, Vector2(2, TILE)), trilho, true)
 		draw_rect(Rect2(px.position + Vector2(TILE - 2, 0), Vector2(2, TILE)), trilho, true)
-	# animacao no relogio da sim (mundo todo em fase)
-	var anim := (Sim.tick * Sim.FRAMES_POR_TICK + Sim._frame_acc) * 0.35
 	var sinal := 1.0 if (v.x + v.y) > 0.0 else -1.0
 	var eixo_ini := px.position.x if horizontal else px.position.y
 	# gomos do tread (linhas transversais a cada 6px, movendo com o fluxo)
@@ -263,6 +275,58 @@ func _draw_esteira(e: Dictionary, px: Rect2) -> void:
 		# interpolacao suave entre ticks (GDD §9: sim discreta, visual fluido)
 		var frac := clampf((e["prog"] + Sim._frame_acc / float(Sim.FRAMES_POR_TICK)) / Sim.BELT_T, 0.0, 1.0)
 		_draw_item(c + v * (frac - 0.5) * TILE, e["item"])
+
+
+func _curva_esteira(e: Dictionary, dir: int) -> int:
+	# 0 = reta; 1 = curva canonica (alimentada pelo lado (dir+1)%4); -1 = espelhada.
+	# Regra Factorio: alimentacao por tras vence; senao, exatamente UM lado alimentando
+	# vira curva; dois lados (T) ou nenhum = reta.
+	var atras = Sim.ent_em(e["pos"] - Sim.DIRS[dir])
+	if atras != null and atras["t"] == "esteira" and atras["dir"] == dir:
+		return 0
+	var lado_a := (dir + 1) % 4
+	var lado_b := (dir + 3) % 4
+	var va = Sim.ent_em(e["pos"] + Sim.DIRS[lado_a])
+	var vb = Sim.ent_em(e["pos"] + Sim.DIRS[lado_b])
+	var alimenta_a: bool = va != null and va["t"] == "esteira" and va["dir"] == lado_b
+	var alimenta_b: bool = vb != null and vb["t"] == "esteira" and vb["dir"] == lado_a
+	if alimenta_a and not alimenta_b:
+		return 1
+	if alimenta_b and not alimenta_a:
+		return -1
+	return 0
+
+
+func _draw_esteira_curva(c: Vector2, dir: int, lado: int, anim: float) -> void:
+	# quarto-de-anel canonico (entra pelo Oeste, sai pro Sul, pivo no canto SO);
+	# rotacao leva pro `dir` real e o espelho cobre a entrada pelo outro lado
+	draw_set_transform(c, (dir - 2) * PI / 2.0, Vector2(lado, 1))
+	var P := Vector2(-HALF_TILE, HALF_TILE)  # pivo: canto da curva
+	var pts := PackedVector2Array()
+	for i in 9:  # borda externa do anel
+		var a := -PI / 2.0 + i * PI / 16.0
+		pts.append(P + Vector2(cos(a), sin(a)) * (TILE - 2.0))
+	for i in 9:  # borda interna (volta)
+		var a2 := -i * PI / 16.0
+		pts.append(P + Vector2(cos(a2), sin(a2)) * 2.0)
+	draw_colored_polygon(pts, COR_SUPERFICIE)
+	draw_arc(P, TILE - 1.0, -PI / 2.0, 0.0, 10, COR_TRILHO, 2.0)   # trilho externo
+	draw_arc(P, 1.5, -PI / 2.0, 0.0, 6, COR_TRILHO, 2.0)           # trilho interno
+	# gomos radiais correndo pelo arco (mesma velocidade linear da reta no raio medio)
+	var passo := PI / 8.0
+	var a0 := -PI / 2.0 + fmod(anim / 8.0, passo)
+	while a0 < 0.0:
+		var dv := Vector2(cos(a0), sin(a0))
+		draw_line(P + dv * 4.0, P + dv * (TILE - 3.0), COR_GOMO, 1.5)
+		a0 += passo
+	# chevron seguindo o arco, apontando na tangente (sentido do fluxo)
+	var ac := -PI / 2.0 + fmod(anim / 8.0, PI / 2.0)
+	var pm := P + Vector2(cos(ac), sin(ac)) * HALF_TILE
+	var tg := Vector2(-sin(ac), cos(ac))
+	var pp := Vector2(cos(ac), sin(ac))
+	draw_line(pm - tg * 2.5 + pp * 3.0, pm + tg * 2.5, COR_CHEVRON, 1.5)
+	draw_line(pm + tg * 2.5, pm - tg * 2.5 - pp * 3.0, COR_CHEVRON, 1.5)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _tampa_esteira(px: Rect2, lado: Vector2, cor: Color) -> void:
