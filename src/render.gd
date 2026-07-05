@@ -168,8 +168,6 @@ func _draw_ent(e: Dictionary) -> void:
 	var t: String = e["t"]
 	var tam: Vector2i = Defs.PREDIOS[t]["tam"] if Defs.PREDIOS.has(t) else Vector2i(1, 1)
 	var px := _grid_rect(e["pos"], tam)
-	if t != "esteira" and t != "cano" and t != "canteiro":
-		draw_rect(Rect2(px.position + Vector2(3, 4), px.size), Color(0, 0, 0, 0.22), true)  # sombra
 	match t:
 		"esteira": _draw_esteira(e, px)
 		"cano": _draw_cano(e, px)
@@ -282,7 +280,7 @@ func _draw_estufa(e: Dictionary, px: Rect2) -> void:
 	var cor: Color = COR_CEPA.get(e.get("cepa_ciclo", ""), Color(0.3, 0.6, 0.3))
 	var tex := _sprite_maq(e["t"])
 	if tex != null:
-		draw_texture_rect(tex, px.grow(-1), false)  # sprite fornecido
+		draw_texture_rect(tex, px, false)  # sprite fornecido preenche o tile, centralizado
 	else:
 		draw_rect(px.grow(-2), Color(0.55, 0.58, 0.55), true)               # base
 		draw_rect(px.grow(-4), Color(0.65, 0.85, 0.90, 0.75), true)          # vidro
@@ -317,7 +315,7 @@ func _draw_maquina(e: Dictionary, px: Rect2) -> void:
 	var t: String = e["t"]
 	var tex := _sprite_maq(t)
 	if tex != null:
-		draw_texture_rect(tex, px.grow(-1), false)  # sprite fornecido cobre a maquina
+		draw_texture_rect(tex, px, false)  # sprite fornecido preenche o tile, centralizado
 	else:
 		var cor: Color = MAQ_COR.get(t, Color.GRAY)
 		# corpo com "chassi"
@@ -441,13 +439,35 @@ func _badge_saida(e: Dictionary, px: Rect2) -> void:
 		draw_string(_fonte, p + Vector2(-4, 14), "x%d" % e["out_n"], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.WHITE)
 
 
+func _celula_na_dir(pos: Vector2i, tam: Vector2i, dir: int) -> Vector2i:
+	match dir:
+		0: return Vector2i(pos.x + (tam.x - 1) / 2, pos.y - 1)
+		1: return Vector2i(pos.x + tam.x, pos.y + (tam.y - 1) / 2)
+		2: return Vector2i(pos.x + (tam.x - 1) / 2, pos.y + tam.y)
+		_: return Vector2i(pos.x - 1, pos.y + (tam.y - 1) / 2)
+
+
+func _seta(c: Vector2, v: Vector2, cor: Color) -> void:
+	# seta pequena colada na lateral do tile (fora dele)
+	v = v.normalized()
+	var p := Vector2(-v.y, v.x)
+	draw_line(c - v * 3.0, c + v * 1.5, cor, 2.0)
+	draw_colored_polygon(PackedVector2Array([c + v * 4.0, c - v * 0.5 + p * 3.0, c - v * 0.5 - p * 3.0]), cor)
+
+
 func _draw_chute_saida(e: Dictionary) -> void:
-	var alvo: Vector2i = Sim._celula_frente(e)
-	var c := _cell_center(alvo)
-	var v := Vector2(Sim.DIRS[e["dir"]])
-	var base := c - v * 10
-	draw_line(base - v * 6, base, Color(1, 1, 0.5, 0.8), 4.0)
-	draw_colored_polygon(PackedVector2Array([base + v * 5, base + Vector2(-v.y, v.x) * 4, base - Vector2(-v.y, v.x) * 4]), Color(1, 1, 0.5, 0.8))
+	var tam: Vector2i = Defs.PREDIOS[e["t"]]["tam"] if Defs.PREDIOS.has(e["t"]) else Vector2i.ONE
+	var px := _grid_rect(e["pos"], tam)
+	var ctr := px.get_center()
+	var dir: int = e["dir"]
+	var vo := Vector2(Sim.DIRS[dir])
+	# saida: colada na lateral da frente, um pouco pra fora (amarelo)
+	var borda_out := ctr + Vector2(vo.x * px.size.x * 0.5, vo.y * px.size.y * 0.5)
+	_seta(borda_out + vo * 4.0, vo, Color(1, 0.85, 0.2, 0.95))
+	# entrada: lado oposto, apontando pra dentro (azul)
+	var vi := Vector2(Sim.DIRS[(dir + 2) % 4])
+	var borda_in := ctr + Vector2(vi.x * px.size.x * 0.5, vi.y * px.size.y * 0.5)
+	_seta(borda_in + vi * 4.0, -vi, Color(0.35, 0.75, 1.0, 0.95))
 
 
 # ---------------- itens (icones por produto, cor por cepa) ----------------
