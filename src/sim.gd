@@ -42,6 +42,7 @@ var ger_propria := 0
 var fator := 256         # velocidade das maquinas (1/256; 256 = 100%)
 var luz_cortada := false
 var conta_ultima := 0
+var dev := false         # F2: libera tudo, sem custo/tier/lote (so p/ testar)
 
 var _frame_acc := 0
 
@@ -588,15 +589,15 @@ func motivo_nao_construir(t: String, pos: Vector2i) -> String:
 	if not Defs.PREDIOS.has(t):
 		return "Prédio inválido"
 	var d: Dictionary = Defs.PREDIOS[t]
-	if tier < d["tier"]:
+	if not dev and tier < d["tier"]:
 		return "Precisa do Tier %d (cumpra a meta)" % d["tier"]
-	if money < d["custo"]:
+	if not dev and money < d["custo"]:
 		return "Sem dinheiro (custa $%d)" % d["custo"]
 	var tam: Vector2i = d["tam"]
 	for dx in tam.x:
 		for dy in tam.y:
 			var c: Vector2i = pos + Vector2i(dx, dy)
-			if not celula_comprada(c):
+			if not dev and not celula_comprada(c):
 				return "Lote não comprado (compre no PC)"
 			if grid.has(c):
 				return "Espaço ocupado"
@@ -627,9 +628,20 @@ func motivo_nao_construir(t: String, pos: Vector2i) -> String:
 func cmd_place(t: String, pos: Vector2i, dir: int) -> bool:
 	if motivo_nao_construir(t, pos) != "":
 		return false
-	money -= Defs.PREDIOS[t]["custo"]
+	if not dev:
+		money -= Defs.PREDIOS[t]["custo"]
 	_criar(t, pos, dir)
 	return true
+
+
+func cmd_dev_toggle() -> void:
+	dev = not dev
+	if dev:
+		for cepa in Defs.STRAINS:  # libera semente de todas as cepas
+			inv["semente:" + cepa] = inv.get("semente:" + cepa, 0) + 50
+		msg.emit("MODO DEV LIGADO — tudo liberado, sem custo (F2 desliga)")
+	else:
+		msg.emit("Modo dev desligado.")
 
 
 func cmd_rotate(pos: Vector2i, dir: int) -> void:
@@ -766,9 +778,10 @@ func cmd_buy_seed(cepa: String) -> bool:
 	if not Defs.STRAINS.has(cepa):
 		return false
 	var s: Dictionary = Defs.STRAINS[cepa]
-	if tier < s["tier"] or money < s["semente"]:
+	if not dev and (tier < s["tier"] or money < s["semente"]):
 		return false
-	money -= s["semente"]
+	if not dev:
+		money -= s["semente"]
 	inv_add("semente:" + cepa, 1)
 	return true
 
@@ -777,9 +790,10 @@ func cmd_buy_lote() -> bool:
 	if lotes_comprados >= Defs.LOTES.size():
 		return false
 	var custo: int = Defs.LOTES[lotes_comprados]["custo"]
-	if money < custo:
+	if not dev and money < custo:
 		return false
-	money -= custo
+	if not dev:
+		money -= custo
 	lotes_comprados += 1
 	msg.emit("Lote %d comprado!" % lotes_comprados)
 	return true

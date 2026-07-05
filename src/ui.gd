@@ -105,7 +105,9 @@ func _process(delta: float) -> void:
 		meta = "META: %s (%d/%d)" % [m["desc"], Sim.meta_progresso(), m["qtd"]]
 	else:
 		meta = "Sandbox — você é o Maior Produtor"
-	_topo.text = "$ %d   |   Tier %d   |   %s   |   %d fps" % [Sim.money, Sim.tier, meta, Engine.get_frames_per_second()]
+	var devtag := "  [ MODO DEV — F2 ]" if Sim.dev else ""
+	_topo.text = "$ %d   |   Tier %d   |   %s   |   %d fps%s" % [Sim.money, Sim.tier, meta, Engine.get_frames_per_second(), devtag]
+	_topo.modulate = Color(1, 0.6, 1) if Sim.dev else Color.WHITE
 	_dica_lbl.text = _dica()
 	_atualiza_hover()
 	_atualiza_tutorial()
@@ -119,8 +121,8 @@ func _process(delta: float) -> void:
 		_msg_timer -= delta
 		if _msg_timer <= 0:
 			_msg_lbl.text = ""
-	if _tier_hotbar != Sim.tier:
-		_tier_hotbar = Sim.tier
+	if _tier_hotbar != Sim.tier + (1000 if Sim.dev else 0):
+		_tier_hotbar = Sim.tier + (1000 if Sim.dev else 0)
 		_monta_hotbar()
 
 
@@ -134,7 +136,7 @@ func _monta_hotbar() -> void:
 		c.queue_free()
 	_slots_tipos = []
 	for t in Defs.PREDIOS:
-		if Defs.PREDIOS[t]["tier"] > Sim.tier:
+		if not Sim.dev and Defs.PREDIOS[t]["tier"] > Sim.tier:
 			continue
 		_slots_tipos.append(t)
 		_hotbar.add_child(Slot.new(t, _slots_tipos.size(), self))
@@ -162,6 +164,8 @@ func _unhandled_input(ev: InputEvent) -> void:
 				build_type = ""
 			KEY_T:
 				_tut_off = not _tut_off
+			KEY_F2:
+				Sim.cmd_dev_toggle()
 			_:
 				# teclas 1-9,0 selecionam o slot da hotbar (aperta de novo = solta)
 				var idx := NUM_KEYS.find(ev.physical_keycode)
@@ -246,7 +250,7 @@ func _monta_shop() -> void:
 	_shop_box.add_child(_sep("Sementes (Tier atual: %d)" % Sim.tier))
 	for cepa in Defs.STRAINS:
 		var s: Dictionary = Defs.STRAINS[cepa]
-		if s["tier"] > Sim.tier:
+		if not Sim.dev and s["tier"] > Sim.tier:
 			continue
 		var b := Button.new()
 		b.text = "Semente %s [%s] — $%d  (bud vende a $%d)" % [s["nome"], Defs.CAT_NOME[s["cat"]], s["semente"], s["preco"]]
