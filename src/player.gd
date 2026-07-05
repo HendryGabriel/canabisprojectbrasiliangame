@@ -143,7 +143,7 @@ func _perto(c: Vector2i) -> bool:
 func _anda(p: Vector2) -> bool:
 	var c := Vector2i((p / TILE).floor())
 	var t := Sim.terreno_em(c)
-	if t == Sim.T.AGUA or t == Sim.T.ARVORE or not Sim.celula_comprada(c):
+	if t == Sim.T.AGUA or t == Sim.T.ARVORE or not Sim.dentro_do_mapa(c):
 		return false
 	var e = Sim.ent_em(c)
 	if e != null and e["t"] != "esteira" and e["t"] != "cano" and e["t"] != "canteiro":

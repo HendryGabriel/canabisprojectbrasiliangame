@@ -12,10 +12,7 @@ const FRAMES_POR_TICK := 6  # 60 fps fisica / 10 ticks
 const BELT_T := 3           # ticks por celula de esteira
 const DIRS := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]  # N E S O
 
-enum T { GRAMA, AGUA, ARVORE, AREIA, PISO, BECO }
-
-const W := 160
-const H := 104
+enum T { GRAMA, AGUA, ARVORE, AREIA, PISO, BECO, CIDADE }
 
 var tick := 0
 var money := 80
@@ -25,9 +22,8 @@ var tier := 0
 var meta_atual := 0
 var vendas := {}         # produto -> total vendido
 var venceu := false
-var lotes_comprados := 1
 
-var terreno := PackedByteArray()
+var _chunks := {}        # Vector2i -> PackedByteArray (cache do terreno procedural)
 var next_id := 1
 var ents := {}           # id -> Dictionary
 var grid := {}           # Vector2i -> id (toda celula coberta)
@@ -48,7 +44,6 @@ var _frame_acc := 0
 
 
 func _ready() -> void:
-	_gerar_terreno()
 	inv["semente:ruderalis"] = 3
 	# pre-colocados: PC na casa, bancada na cozinha, traficante no beco (GDD §6)
 	_criar("pc", Vector2i(5, 4), 2)
@@ -63,88 +58,93 @@ func _physics_process(_d: float) -> void:
 		_step()
 
 
-# ---------------- terreno ----------------
+# ---------------- terreno procedural (estilo Minecraft: chunks por seed) ----------------
+# O mundo e uma FUNCAO PURA de (x, y, SEED): qualquer maquina, em qualquer ordem de
+# visita, gera o mesmo terreno — obrigatorio pro lockstep (GDD §9). Chunks sao so cache.
+# Em cima (y<0) fica a cidade (limite do mapa); a zona da casa e feita a mao e garante
+# agua/arvores/areia a poucos tiles de distancia.
 
-func _gerar_terreno() -> void:
-	terreno.resize(W * H)
-	terreno.fill(T.GRAMA)
-	# --- area inicial (identica ao mapa antigo, nao muda o comeco) ---
-	for x in range(4, 11):
-		for y in range(3, 9):
-			_set_t(x, y, T.PISO)  # casa
-	for x in range(0, 2):
-		for y in range(4, 12):
-			_set_t(x, y, T.BECO)  # beco escuro
-	_rect_t(Rect2i(30, 7, 6, 4), T.AGUA)       # lago perto do inicio
-	_bosque(Rect2i(3, 23, 20, 10), 7)          # bosque perto do inicio
-	_rect_t(Rect2i(29, 25, 9, 6), T.AREIA)      # areial perto do inicio
-	# --- recursos espalhados pelo mapa grande (para expansao) ---
-	_rect_t(Rect2i(64, 8, 14, 9), T.AGUA)       # lago leste
-	_bosque(Rect2i(62, 55, 40, 30), 6)          # bosque sul
-	_rect_t(Rect2i(110, 30, 18, 11), T.AREIA)   # areial leste
-	_rect_t(Rect2i(122, 62, 15, 10), T.AGUA)    # lago longe
-	_bosque(Rect2i(8, 68, 44, 32), 6)           # bosque sudoeste
-	_rect_t(Rect2i(70, 90, 18, 11), T.AREIA)    # areial sul
-	_rect_t(Rect2i(134, 84, 16, 12), T.AGUA)    # lago sudeste
+const CHUNK := 16
+const SEMENTE_MUNDO := 420133742  # troque para gerar outro mundo
 
+const ZONA_CASA := Rect2i(0, 0, 42, 34)  # feita a mao (casa, beco, recursos iniciais)
 
-func _bosque(r: Rect2i, densidade: int) -> void:
-	# arvores esparsas dentro do retangulo (deterministico, sem random)
-	for x in range(r.position.x, mini(r.end.x, W)):
-		for y in range(r.position.y, mini(r.end.y, H)):
-			if (x * 7 + y * 13) % densidade == 0:
-				_set_t(x, y, T.ARVORE)
-
-
-func _set_t(x: int, y: int, t: int) -> void:
-	terreno[y * W + x] = t
-
-
-func _rect_t(r: Rect2i, t: int) -> void:
-	for x in range(r.position.x, r.end.x):
-		for y in range(r.position.y, r.end.y):
-			_set_t(x, y, t)
+func pegar_chunk(cc: Vector2i) -> PackedByteArray:
+	var ch: PackedByteArray = _chunks.get(cc, PackedByteArray())
+	if ch.is_empty():
+		ch.resize(CHUNK * CHUNK)
+		for dy in CHUNK:
+			for dx in CHUNK:
+				ch[dy * CHUNK + dx] = _gen_tile(cc.x * CHUNK + dx, cc.y * CHUNK + dy)
+		_chunks[cc] = ch
+	return ch
 
 
 func terreno_em(c: Vector2i) -> int:
-	if c.x < 0 or c.y < 0 or c.x >= W or c.y >= H:
+	if c.y < 0:
+		return T.CIDADE
+	var cc := Vector2i(_fdiv(c.x, CHUNK), _fdiv(c.y, CHUNK))
+	return pegar_chunk(cc)[posmod(c.y, CHUNK) * CHUNK + posmod(c.x, CHUNK)]
+
+
+func dentro_do_mapa(c: Vector2i) -> bool:
+	return c.y >= 0  # acima e a cidade; resto do mundo e infinito
+
+
+func _gen_tile(x: int, y: int) -> int:
+	if y < 0:
+		return T.CIDADE
+	if ZONA_CASA.has_point(Vector2i(x, y)):
+		if x >= 4 and x < 11 and y >= 3 and y < 9:
+			return T.PISO   # casa
+		if x >= 0 and x < 2 and y >= 4 and y < 12:
+			return T.BECO   # beco escuro
+		if x >= 30 and x < 36 and y >= 7 and y < 11:
+			return T.AGUA   # lago garantido perto da casa
+		if x >= 29 and x < 38 and y >= 25 and y < 31:
+			return T.AREIA  # areial garantido perto da casa
+		if x >= 3 and x < 23 and y >= 23 and y < 33 and (x * 7 + y * 13) % 7 == 0:
+			return T.ARVORE # bosque garantido perto da casa
+		return T.GRAMA
+	# lagos: 1 possivel por supercelula de 24x24, com raio variavel; areia na borda
+	var melhor := 0x7fffffffffffffff
+	var raio := 0
+	var sx0 := _fdiv(x, 24)
+	var sy0 := _fdiv(y, 24)
+	for sy in range(sy0 - 1, sy0 + 2):
+		for sx in range(sx0 - 1, sx0 + 2):
+			if _h(sx, sy, 1) % 100 < 24:
+				var cx := sx * 24 + 5 + _h(sx, sy, 2) % 14
+				var cy := sy * 24 + 5 + _h(sx, sy, 3) % 14
+				var d := (x - cx) * (x - cx) + (y - cy) * (y - cy)
+				if d < melhor:
+					melhor = d
+					raio = 3 + _h(sx, sy, 4) % 4
+	if melhor <= raio * raio:
 		return T.AGUA
-	return terreno[c.y * W + c.x]
-
-
-func load_terrain_from_floor_layer(layer: TileMapLayer) -> void:
-	var used_cells: Array[Vector2i] = layer.get_used_cells()
-	if used_cells.is_empty():
-		return
-	terreno.fill(T.GRAMA)
-	for cell in used_cells:
-		var terrain_cell: Vector2i = cell
-		if terrain_cell.x < 0 or terrain_cell.y < 0 or terrain_cell.x >= W or terrain_cell.y >= H:
-			continue
-		var atlas: Vector2i = layer.get_cell_atlas_coords(terrain_cell)
-		_set_t(terrain_cell.x, terrain_cell.y, _terrain_from_floor_atlas(atlas))
-
-
-func _terrain_from_floor_atlas(atlas: Vector2i) -> int:
-	if atlas.x >= 5 and atlas.x <= 9 and atlas.y >= 12 and atlas.y <= 25:
+	if melhor <= (raio + 2) * (raio + 2):
 		return T.AREIA
-	if atlas.x >= 15 and atlas.x <= 19 and atlas.y >= 0 and atlas.y <= 4:
-		return T.PISO
-	if atlas.x >= 5 and atlas.x <= 9 and atlas.y >= 0 and atlas.y <= 11:
-		return T.BECO
+	# florestas: densidade por regiao de 16x16, arvore sorteada por tile
+	var f := _h(x >> 4, y >> 4, 5) % 100
+	var dens := 12 if f < 35 else (4 if f < 70 else 0)
+	if dens > 0 and _h(x, y, 6) % 100 < dens:
+		return T.ARVORE
 	return T.GRAMA
 
 
-func lote_de(c: Vector2i) -> int:
-	for i in Defs.LOTES.size():
-		if Defs.LOTES[i]["rect"].has_point(c):
-			return i
-	return -1
+static func _h(x: int, y: int, sal: int) -> int:
+	# hash inteiro deterministico (mesmo resultado em toda maquina — lockstep)
+	var n := x * 374761393 + y * 668265263 + sal * 974634541 + SEMENTE_MUNDO
+	n = (n ^ (n >> 13)) * 1274126177
+	return (n ^ (n >> 16)) & 0x7fffffff
 
 
-func celula_comprada(c: Vector2i) -> bool:
-	var l := lote_de(c)
-	return l >= 0 and l < lotes_comprados
+static func _fdiv(a: int, b: int) -> int:
+	@warning_ignore("integer_division")
+	var q := a / b
+	if (a % b != 0) and ((a < 0) != (b < 0)):
+		q -= 1
+	return q
 
 
 # ---------------- entidades ----------------
@@ -605,8 +605,8 @@ func motivo_nao_construir(t: String, pos: Vector2i) -> String:
 	for dx in tam.x:
 		for dy in tam.y:
 			var c: Vector2i = pos + Vector2i(dx, dy)
-			if not dev and not celula_comprada(c):
-				return "Lote não comprado (compre no PC)"
+			if not dentro_do_mapa(c):
+				return "Aí é a cidade — construa pro outro lado"
 			if grid.has(c):
 				return "Espaço ocupado"
 			var ter := terreno_em(c)
@@ -791,19 +791,6 @@ func cmd_buy_seed(cepa: String) -> bool:
 	if not dev:
 		money -= s["semente"]
 	inv_add("semente:" + cepa, 1)
-	return true
-
-
-func cmd_buy_lote() -> bool:
-	if lotes_comprados >= Defs.LOTES.size():
-		return false
-	var custo: int = Defs.LOTES[lotes_comprados]["custo"]
-	if not dev and money < custo:
-		return false
-	if not dev:
-		money -= custo
-	lotes_comprados += 1
-	msg.emit("Lote %d comprado!" % lotes_comprados)
 	return true
 
 

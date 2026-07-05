@@ -27,7 +27,7 @@ Abra a pasta no Godot 4.6 (importar `project.godot`) e dê Play (F5).
 2. Venda os buds no **beco** (entidade roxa à esquerda) com E.
 3. Prense buds na **bancada** da cozinha (segure E) — prensado vale mais.
 4. Cumpra a meta (20 buds) → Tier 1 → esteiras até máquinas, mini estufa, canos, poço.
-5. Expanda comprando lotes no PC até a fábrica 100% automática.
+5. Explore o mundo (gerado proceduralmente conforme você anda) até a fábrica 100% automática.
 
 ## Arquitetura (GDD §9)
 

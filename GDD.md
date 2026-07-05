@@ -189,11 +189,15 @@ fornecidos, sem afetar a simulação.
 
 ## 11. Mundo / Progressão espacial
 
-- **Terreno finito**, começa em **casa + quintal pequeno**.
-- Expande **comprando lotes** no PC (mais um item da loja, amarrado ao dinheiro).
-- Recursos posicionados no mapa: **árvores** (madeira), **corpos d'água** (poço/bomba),
-  **depósito de areia** (vidro).
-- Começa apertado (força bom layout); cada lote novo é recompensa concreta.
+- **Terreno procedural estilo Minecraft**: o mundo é uma função pura de `(x, y, seed)`
+  — chunks de 16×16 gerados/pintados conforme o player anda (pré-definido antes de
+  entrar; qualquer máquina gera idêntico → compatível com lockstep).
+- **Topo fixo**: a casa e o traficante do beco ficam na zona feita à mão; acima do
+  limite do mapa (y<0) fica a **cidade** (intransponível).
+- **Recursos garantidos perto da casa** (≤200m): lago, bosque e areial fixos na zona
+  inicial; o resto do mundo gera lagos (com borda de areia) e florestas por noise.
+- ~~Compra de lotes~~ — removida; o mundo é aberto, a progressão espacial é andar e
+  ocupar.
 
 ---
 

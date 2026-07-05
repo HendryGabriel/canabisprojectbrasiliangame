@@ -260,18 +260,6 @@ func _monta_shop() -> void:
 			_monta_shop())
 		_shop_box.add_child(b)
 
-	_shop_box.add_child(_sep("Terreno"))
-	if Sim.lotes_comprados < Defs.LOTES.size():
-		var lb := Button.new()
-		lb.text = "Comprar Lote %d — $%d" % [Sim.lotes_comprados, Defs.LOTES[Sim.lotes_comprados]["custo"]]
-		lb.pressed.connect(func():
-			if not Sim.cmd_buy_lote():
-				_on_msg("Dinheiro insuficiente.")
-			_monta_shop())
-		_shop_box.add_child(lb)
-	else:
-		_shop_box.add_child(_sep("(todo o terreno é seu)"))
-
 	_shop_box.add_child(_sep("Serviços"))
 	var adv := Button.new()
 	adv.text = "Advogado (Calor -30) — $500"

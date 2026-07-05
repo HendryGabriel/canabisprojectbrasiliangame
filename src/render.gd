@@ -18,9 +18,7 @@ const COR_CEPA := {
 }
 
 var ui: CanvasLayer
-var _terrain_overlay: ImageTexture
 var _fonte: Font
-var _has_painted_water := false
 var _has_painted_interior_walls := false
 var _traficante_pos := Vector2.ZERO
 var _money_antes := -1
@@ -29,18 +27,12 @@ var _floats: Array = []  # {pos, txt, ttl, cor}
 
 func _ready() -> void:
 	_fonte = ThemeDB.fallback_font
-	_update_painted_tile_layers_state()
-	_bake_terrain_overlay()
+	var interior_walls_layer := get_parent().get_node_or_null("InteriorWalls") as TileMapLayer
+	_has_painted_interior_walls = interior_walls_layer != null and not interior_walls_layer.get_used_cells().is_empty()
+	_carrega_atlases()
 	for id in Sim.ents:
 		if Sim.ents[id]["t"] == "traficante":
 			_traficante_pos = _cell_center(Sim.ents[id]["pos"])
-
-
-func _update_painted_tile_layers_state() -> void:
-	var water_layer := get_parent().get_node_or_null("Water") as TileMapLayer
-	var interior_walls_layer := get_parent().get_node_or_null("InteriorWalls") as TileMapLayer
-	_has_painted_water = water_layer != null and not water_layer.get_used_cells().is_empty()
-	_has_painted_interior_walls = interior_walls_layer != null and not interior_walls_layer.get_used_cells().is_empty()
 
 
 func _process(delta: float) -> void:
@@ -55,59 +47,89 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-# ---------------- terreno temporario: agua e arvores ----------------
+# ---------------- decor procedural: pedras, vegetacao e arvores dos atlases ----------------
+# Rects vem dos manifests (Rocks_sprites.html / Vegetation_sprites.html).
+# Arvore = tronco (vegetation_022/023) + copa (vegetation_006..009).
+# Cada chunk gera sua lista de sprites UMA vez (funcao pura do hash da Sim) e ela fica
+# em cache — por frame e so draw_texture_rect_region dos chunks visiveis.
 
-func _bake_terrain_overlay() -> void:
-	var img: Image = Image.create(Sim.W * TILE, Sim.H * TILE, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	for x in Sim.W:
-		for y in Sim.H:
-			var cell: Vector2i = Vector2i(x, y)
-			var terrain: int = Sim.terreno_em(cell)
-			if terrain == Sim.T.AGUA and _has_painted_water:
-				continue
-			if terrain != Sim.T.AGUA and terrain != Sim.T.ARVORE:
-				continue
-			var tile: Image = _terrain_overlay_img(terrain, (x * 7 + y * 13) % 3)
-			img.blit_rect(tile, Rect2i(0, 0, TILE, TILE), cell * TILE)
-	_terrain_overlay = ImageTexture.create_from_image(img)
+const VEG_TRONCOS := [Rect2(197, 65, 34, 31), Rect2(196, 98, 39, 46)]
+const VEG_COPAS := [Rect2(2, 5, 43, 91), Rect2(50, 5, 43, 91), Rect2(98, 5, 43, 91), Rect2(146, 5, 43, 91)]
+# [atlas(0=rocks,1=veg), rect] — decors pequenos de grama e areia
+const DECOR_GRAMA := [
+	[1, Rect2(260, 0, 9, 16)], [1, Rect2(276, 0, 11, 14)], [1, Rect2(243, 2, 9, 11)],
+	[1, Rect2(293, 3, 9, 11)], [1, Rect2(308, 4, 8, 10)], [0, Rect2(65, 17, 31, 14)],
+	[0, Rect2(48, 51, 15, 10)], [0, Rect2(81, 68, 11, 9)], [0, Rect2(35, 53, 10, 7)],
+]
+const DECOR_AREIA := [
+	[0, Rect2(84, 37, 8, 6)], [0, Rect2(68, 69, 8, 7)], [0, Rect2(52, 70, 7, 5)],
+	[0, Rect2(65, 100, 11, 9)], [0, Rect2(36, 85, 8, 6)],
+]
+
+var _atlas: Array = [null, null]  # [rocks, vegetation]
+var _decor_chunks := {}           # Vector2i -> Array de {a, src, dst}
 
 
-func _terrain_overlay_img(terrain: int, variante: int) -> Image:
-	var img: Image = Image.create(TILE, TILE, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var rnd: int = variante * 97
-	match terrain:
-		Sim.T.AGUA:
-			img.fill(Color(0.16, 0.36, 0.62))
-			for i in 5:
-				var wy: int = (i * 7 + rnd) % (TILE - 2) + 1
-				for wx in range(2 + (i * 5) % 8, TILE - 4, 9):
-					img.set_pixel(wx, wy, Color(0.35, 0.55, 0.80))
-					img.set_pixel(wx + 1, wy, Color(0.35, 0.55, 0.80))
-		Sim.T.ARVORE:
-			for px in range(6, 10):
-				for py in range(9, 15):
-					img.set_pixel(px, py, Color(0.35, 0.22, 0.10))
-			for px in TILE:
-				for py in TILE:
-					var d: float = Vector2(px - HALF_TILE, py - 6).length()
-					if d < 6 - ((px * 3 + py * 7 + rnd) % 2):
-						var tree_color: Color = Color(0.10, 0.32, 0.10) if (px + py + rnd) % 4 else Color(0.16, 0.42, 0.14)
-						img.set_pixel(px, py, tree_color)
-	return img
+func _carrega_atlases() -> void:
+	# ImageTexture recriada: CompressedTexture2D renderiza branco (mesmo bug das maquinas)
+	_atlas[0] = ImageTexture.create_from_image(load("res://src/ASSETS/STATIC/Rocks.png").get_image())
+	_atlas[1] = ImageTexture.create_from_image(load("res://src/ASSETS/STATIC/Vegetation.png").get_image())
+
+
+func _decor_do_chunk(cc: Vector2i) -> Array:
+	var lista: Array = []
+	for dy in Sim.CHUNK:
+		for dx in Sim.CHUNK:
+			var x: int = cc.x * Sim.CHUNK + dx
+			var y: int = cc.y * Sim.CHUNK + dy
+			var t := Sim.terreno_em(Vector2i(x, y))
+			var base := Vector2((x + 0.5) * TILE, (y + 1) * TILE)  # centro-baixo do tile
+			if t == Sim.T.ARVORE:
+				var tr: Rect2 = VEG_TRONCOS[Sim._h(x, y, 10) % VEG_TRONCOS.size()]
+				var co: Rect2 = VEG_COPAS[Sim._h(x, y, 11) % VEG_COPAS.size()]
+				var th := TILE * 1.5
+				var tw := tr.size.x * th / tr.size.y
+				var ch := TILE * 2.7
+				var cw := co.size.x * ch / co.size.y
+				lista.append({"a": 1, "src": tr, "dst": Rect2(base.x - tw * 0.5, base.y - th, tw, th)})
+				lista.append({"a": 1, "src": co, "dst": Rect2(base.x - cw * 0.5, base.y - th * 0.6 - ch, cw, ch)})
+			elif t == Sim.T.GRAMA and Sim._h(x, y, 12) % 100 < 7:
+				var d: Array = DECOR_GRAMA[Sim._h(x, y, 13) % DECOR_GRAMA.size()]
+				var r: Rect2 = d[1]
+				lista.append({"a": d[0], "src": r, "dst": Rect2(base.x - r.size.x * 0.5, base.y - r.size.y, r.size.x, r.size.y)})
+			elif t == Sim.T.AREIA and Sim._h(x, y, 14) % 100 < 6:
+				var d2: Array = DECOR_AREIA[Sim._h(x, y, 15) % DECOR_AREIA.size()]
+				var r2: Rect2 = d2[1]
+				lista.append({"a": d2[0], "src": r2, "dst": Rect2(base.x - r2.size.x * 0.5, base.y - r2.size.y, r2.size.x, r2.size.y)})
+	return lista
+
+
+func _draw_decor(vis: Rect2) -> void:
+	# ponytail: cache sem LRU — se passar do teto, limpa tudo e rebaka os visiveis (barato)
+	if _decor_chunks.size() > 600:
+		_decor_chunks.clear()
+	var alcance := vis.grow(TILE * 4)  # arvores vazam ~4 tiles pra cima do proprio chunk
+	var c0 := Vector2i(Sim._fdiv(int(alcance.position.x / TILE), Sim.CHUNK), Sim._fdiv(int(alcance.position.y / TILE), Sim.CHUNK))
+	var c1 := Vector2i(Sim._fdiv(int(alcance.end.x / TILE), Sim.CHUNK), Sim._fdiv(int(alcance.end.y / TILE), Sim.CHUNK))
+	for cy in range(maxi(c0.y, 0), c1.y + 1):
+		for cx in range(c0.x, c1.x + 1):
+			var cc := Vector2i(cx, cy)
+			var lista: Array = _decor_chunks.get(cc, [])
+			if lista.is_empty() and not _decor_chunks.has(cc):
+				lista = _decor_do_chunk(cc)
+				_decor_chunks[cc] = lista
+			for e in lista:
+				draw_texture_rect_region(_atlas[e["a"]], e["dst"], e["src"])
 
 
 # ---------------- draw principal ----------------
 
 func _draw() -> void:
-	if _terrain_overlay != null:
-		draw_texture_rect(_terrain_overlay, Rect2(0, 0, Sim.W * TILE, Sim.H * TILE), false)
-	if not _has_painted_interior_walls:
-		_draw_casa()
-	_draw_lotes()
 	# culling: so desenha o que a camera ve (fabricas grandes continuam a 60fps)
 	var vis: Rect2 = (get_canvas_transform().affine_inverse() * get_viewport_rect()).grow(TILE * 2)
+	_draw_decor(vis)
+	if not _has_painted_interior_walls:
+		_draw_casa()
 	var ids := Sim.ents.keys()
 	ids.sort()
 	# canos e esteiras primeiro (chao), depois maquinas (em cima)
@@ -152,16 +174,6 @@ func _draw_casa() -> void:
 	draw_line(p + Vector2(0, s.y), p + Vector2(3 * TILE, s.y), cor, 6.0)   # porta no tile 7
 	draw_line(p + Vector2(4 * TILE, s.y), p + s, cor, 6.0)
 	draw_rect(Rect2(p + Vector2(3 * TILE, s.y - 2), Vector2(TILE, 4)), Color(0.65, 0.50, 0.30), true)  # soleira
-
-
-func _draw_lotes() -> void:
-	for i in Defs.LOTES.size():
-		var r: Rect2i = Defs.LOTES[i]["rect"]
-		var px := _grid_rect(r.position, r.size)
-		if i >= Sim.lotes_comprados:
-			draw_rect(px, Color(0, 0, 0, 0.55), true)
-			draw_string(_fonte, px.position + Vector2(20, 40), "LOTE %d — $%d (compre no PC)" % [i, Defs.LOTES[i]["custo"]], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
-		draw_rect(px, Color(1, 1, 1, 0.12), false, 1.0)
 
 
 func _draw_ent(e: Dictionary) -> void:
@@ -544,7 +556,7 @@ func _draw_ghost() -> void:
 	for dx in tam.x:
 		for dy in tam.y:
 			var c: Vector2i = cell + Vector2i(dx, dy)
-			if Sim.grid.has(c) or not Sim.celula_comprada(c):
+			if Sim.grid.has(c) or not Sim.dentro_do_mapa(c):
 				ok = false
 	draw_rect(px, Color(0, 1, 0, 0.30) if ok else Color(1, 0, 0, 0.30), true)
 	draw_rect(px, Color(0, 1, 0, 0.8) if ok else Color(1, 0, 0, 0.8), false, 2.0)

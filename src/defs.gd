@@ -109,19 +109,6 @@ const METAS := [
 	{"tier": 5, "desc": "Venda 10 CBD — vire o Maior Produtor!", "itens": ["cbd"], "qtd": 10},
 ]
 
-# Lotes de terra (indice 0 = casa+quintal, gratis). Comprados em ordem no PC.
-# Cobrem o mapa 160x104 inteiro; area inicial (lote 0) fica igual ao antigo.
-const LOTES := [
-	{"custo": 0, "rect": Rect2i(0, 0, 28, 22)},
-	{"custo": 400, "rect": Rect2i(28, 0, 32, 22)},
-	{"custo": 900, "rect": Rect2i(0, 22, 28, 30)},
-	{"custo": 2200, "rect": Rect2i(28, 22, 32, 30)},
-	{"custo": 6000, "rect": Rect2i(60, 0, 44, 52)},
-	{"custo": 15000, "rect": Rect2i(0, 52, 104, 52)},
-	{"custo": 40000, "rect": Rect2i(104, 0, 56, 104)},
-]
-
-
 func item_preco(item: String) -> int:
 	if GENERICOS.has(item):
 		return GENERICOS[item]
