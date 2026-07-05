@@ -556,7 +556,7 @@ class Slot extends Control:
 		var pode: bool = Sim.money >= d["custo"]
 		draw_rect(Rect2(1, 1, 52, 52), Color(0.10, 0.10, 0.14, 0.92), true)
 		if Defs.MACHINE_SPRITES.has(tipo):
-			draw_texture_rect(load(Defs.MACHINE_SPRITES[tipo]), Rect2(4, 4, 46, 46), false)
+			draw_texture_rect(_spr(tipo), Rect2(4, 4, 46, 46), false)
 		else:
 			Icons.desenha(self, tipo, Vector2(27, 28), 1.0)
 		if not pode:
@@ -566,6 +566,13 @@ class Slot extends Control:
 			draw_rect(Rect2(3, 3, 12, 13), Color(0, 0, 0, 0.6), true)
 			draw_string(ThemeDB.fallback_font, Vector2(6, 14), str(num % 10), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
 		draw_string(ThemeDB.fallback_font, Vector2(0, 66), "$%d" % d["custo"], HORIZONTAL_ALIGNMENT_CENTER, 54, 11, Color.GREEN_YELLOW if pode else Color(1, 0.4, 0.4))
+
+	# CompressedTexture2D renderiza branco via draw_texture_rect; ImageTexture resolve.
+	static var _tex_cache := {}
+	static func _spr(tipo: String) -> Texture2D:
+		if not _tex_cache.has(tipo):
+			_tex_cache[tipo] = ImageTexture.create_from_image(load(Defs.MACHINE_SPRITES[tipo]).get_image())
+		return _tex_cache[tipo]
 
 	func _gui_input(ev: InputEvent) -> void:
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:

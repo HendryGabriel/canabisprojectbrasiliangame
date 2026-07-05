@@ -350,8 +350,14 @@ func _icone_maquina(t: String, c: Vector2, _px: Rect2) -> void:
 	Icons.desenha(self, t, c, 1.0, false)  # mesmo icone da hotbar, sem o chassi
 
 
+var _spr_cache := {}
 func _sprite_maq(t: String) -> Texture2D:
-	return load(Defs.MACHINE_SPRITES[t]) if Defs.MACHINE_SPRITES.has(t) else null
+	if not Defs.MACHINE_SPRITES.has(t):
+		return null
+	if not _spr_cache.has(t):
+		var src: Texture2D = load(Defs.MACHINE_SPRITES[t])
+		_spr_cache[t] = ImageTexture.create_from_image(src.get_image())
+	return _spr_cache[t]
 
 
 func _draw_bancada(e: Dictionary, px: Rect2) -> void:
