@@ -66,6 +66,7 @@ const DECOR_AREIA := [
 
 var _atlas: Array = [null, null, null]  # [rocks, vegetation, tallgrass]
 var _decor_chunks := {}                 # Vector2i -> Array de {a, src, dst}
+var _arado: Texture2D                   # terra arada (sprite do canteiro)
 
 
 func _carrega_atlases() -> void:
@@ -73,6 +74,10 @@ func _carrega_atlases() -> void:
 	_atlas[0] = ImageTexture.create_from_image(load("res://src/ASSETS/STATIC/Rocks.png").get_image())
 	_atlas[1] = ImageTexture.create_from_image(load("res://src/ASSETS/STATIC/Vegetation.png").get_image())
 	_atlas[2] = ImageTexture.create_from_image(load("res://src/ASSETS/EARLYGAME/TALLGRASS.png").get_image())
+	var ar: Image = load("res://src/ASSETS/STATIC/arado.png").get_image()
+	ar.convert(Image.FORMAT_RGBA8)
+	_arado = ImageTexture.create_from_image(ar.get_region(ar.get_used_rect()))  # corta o fundo
+	_bake_esteira()
 	# mato limpo muda o terreno -> invalida o cache de decor daquele chunk
 	Sim.mato_limpo.connect(func(cell: Vector2i):
 		_decor_chunks.erase(Vector2i(Sim._fdiv(cell.x, Sim.CHUNK), Sim._fdiv(cell.y, Sim.CHUNK))))
@@ -213,18 +218,31 @@ func _draw_ent(e: Dictionary) -> void:
 
 # ---------------- esteira / cano / poco ----------------
 
+var _esteira_frames: Array = []  # 5 frames gerados do sprite (rolagem com wrap)
+
+func _bake_esteira() -> void:
+	# o sprite e um segmento unico: deslocar o conteudo verticalmente com wrap
+	# gera os 5 quadros da animacao "andando pra frente" (sprite aponta pro Norte)
+	var src: Image = load("res://src/ASSETS/STATIC/esteira.png").get_image()
+	src.convert(Image.FORMAT_RGBA8)
+	var w := src.get_width()
+	var h := src.get_height()
+	for i in 5:
+		var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+		var off := i * h / 5
+		img.blit_rect(src, Rect2i(0, off, w, h - off), Vector2i(0, 0))
+		img.blit_rect(src, Rect2i(0, 0, w, off), Vector2i(0, h - off))
+		_esteira_frames.append(ImageTexture.create_from_image(img))
+
+
 func _draw_esteira(e: Dictionary, px: Rect2) -> void:
-	draw_rect(px.grow(-1), Color(0.30, 0.30, 0.34), true)
-	draw_rect(px.grow(-4), Color(0.45, 0.45, 0.50), true)
-	# trilhos laterais
-	var v := Vector2(Sim.DIRS[e["dir"]])
-	var p := Vector2(-v.y, v.x)
-	# setas animadas correndo na direcao (visual apenas — nao afeta a sim)
-	var anim := fmod((Sim.tick * Sim.FRAMES_POR_TICK + Sim._frame_acc) * 0.55, 12.0)
 	var c := px.get_center()
-	for i in range(-1, 2):
-		var base := c + v * (i * 12.0 + anim - 6.0)
-		draw_colored_polygon(PackedVector2Array([base + v * 4, base - v * 2 + p * 5, base - v * 2 - p * 5]), Color(0.62, 0.62, 0.68))
+	var v := Vector2(Sim.DIRS[e["dir"]])
+	# frame avanca com o relogio da sim; rotacao aponta o sprite pra direcao da esteira
+	var frame := int((Sim.tick * Sim.FRAMES_POR_TICK + Sim._frame_acc) / 4) % 5
+	draw_set_transform(c, e["dir"] * PI / 2.0, Vector2.ONE)
+	draw_texture_rect(_esteira_frames[frame], Rect2(-HALF_TILE, -HALF_TILE, TILE, TILE), false)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if e["item"] != "":
 		# interpolacao suave entre ticks (GDD §9: sim discreta, visual fluido)
 		var frac := clampf((e["prog"] + Sim._frame_acc / float(Sim.FRAMES_POR_TICK)) / Sim.BELT_T, 0.0, 1.0)
@@ -270,12 +288,17 @@ func _draw_poco(e: Dictionary, px: Rect2) -> void:
 
 func _draw_canteiro(e: Dictionary, px: Rect2) -> void:
 	var fase: int = e["fase"]
-	var solo := Color(0.42, 0.30, 0.18) if fase == 1 else Color(0.30, 0.20, 0.12)  # seco mais claro
-	draw_rect(px.grow(-2), solo, true)
-	draw_rect(px.grow(-2), Color(0.20, 0.13, 0.08), false, 2.0)
-	for i in 3:  # sulcos
-		var sy: float = px.position.y + 8 + i * 8
-		draw_line(Vector2(px.position.x + 4, sy), Vector2(px.end.x - 4, sy), solo.darkened(0.25), 2.0)
+	if _arado != null:
+		# sprite de terra arada; mais clarinho enquanto seco (esperando rega)
+		var mod := Color(1.2, 1.1, 0.95) if fase == 1 else Color.WHITE
+		draw_texture_rect(_arado, px, false, mod)
+	else:
+		var solo := Color(0.42, 0.30, 0.18) if fase == 1 else Color(0.30, 0.20, 0.12)
+		draw_rect(px.grow(-2), solo, true)
+		draw_rect(px.grow(-2), Color(0.20, 0.13, 0.08), false, 2.0)
+		for i in 3:  # sulcos
+			var sy: float = px.position.y + 8 + i * 8
+			draw_line(Vector2(px.position.x + 4, sy), Vector2(px.end.x - 4, sy), solo.darkened(0.25), 2.0)
 	var c := px.get_center()
 	var cor: Color = COR_CEPA.get(e["cepa"], Color(0.4, 0.7, 0.3))
 	match fase:
@@ -381,16 +404,24 @@ func _sprite_maq(t: String) -> Texture2D:
 	if not Defs.MACHINE_SPRITES.has(t):
 		return null
 	if not _spr_cache.has(t):
-		var src: Texture2D = load(Defs.MACHINE_SPRITES[t])
-		_spr_cache[t] = ImageTexture.create_from_image(src.get_image())
+		var info: Array = Defs.MACHINE_SPRITES[t]
+		var img: Image = load(info[0]).get_image()
+		var r: Rect2 = info[1]
+		if r.size.x > 0:
+			img = img.get_region(Rect2i(r))  # recorta a maquina da folha
+		_spr_cache[t] = ImageTexture.create_from_image(img)
 	return _spr_cache[t]
 
 
 func _draw_bancada(e: Dictionary, px: Rect2) -> void:
-	draw_rect(px.grow(-2), Color(0.55, 0.38, 0.20), true)     # mesa
-	draw_rect(px.grow(-2), Color(0.35, 0.22, 0.10), false, 2.0)
-	draw_rect(Rect2(px.position + Vector2(8, 6), Vector2(16, 8)), Color(0.70, 0.70, 0.75), true)   # prensa
-	draw_rect(Rect2(px.position + Vector2(11, 14), Vector2(10, 6)), Color(0.50, 0.50, 0.55), true)
+	var tex := _sprite_maq("bancada")
+	if tex != null:
+		draw_texture_rect(tex, px, false)
+	else:
+		draw_rect(px.grow(-2), Color(0.55, 0.38, 0.20), true)     # mesa
+		draw_rect(px.grow(-2), Color(0.35, 0.22, 0.10), false, 2.0)
+		draw_rect(Rect2(px.position + Vector2(8, 6), Vector2(16, 8)), Color(0.70, 0.70, 0.75), true)   # prensa
+		draw_rect(Rect2(px.position + Vector2(11, 14), Vector2(10, 6)), Color(0.50, 0.50, 0.55), true)
 	if e["prog"] > 0:
 		_barra_prog(px, e["prog"], Defs.RECEITAS["bancada"]["t"] * 256)
 		draw_string(_fonte, px.position + Vector2(0, -4), "segure E!", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.YELLOW)

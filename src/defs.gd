@@ -87,11 +87,20 @@ const RECEITAS := {
 	"extrator_areia": {"t": 60, "in": {}, "out": "areia", "n": 1},
 }
 
-# Sprites de maquina fornecidos (substituem o icone procedural no mundo e na hotbar).
+# Sprites de maquina fornecidos: [caminho, regiao no atlas] (Rect2() = imagem inteira).
+# Regioes vem dos *_sprites.json de cada folha. Substituem o icone procedural.
 const MACHINE_SPRITES := {
-	"maq_pura": "res://src/ASSETS/MACHINE_ICONS/refine_weed.png",
-	"fab_seda": "res://src/ASSETS/MACHINE_ICONS/silk_machine.png",
-	"estufa_mini": "res://src/ASSETS/MACHINE_ICONS/mini_estufa.png",
+	"maq_pura": ["res://src/ASSETS/MACHINE_ICONS/refine_weed.png", Rect2()],
+	"fab_seda": ["res://src/ASSETS/MACHINE_ICONS/silk_machine.png", Rect2()],
+	"estufa_mini": ["res://src/ASSETS/MACHINE_ICONS/mini_estufa.png", Rect2()],
+	"maq_cbd": ["res://src/ASSETS/MACHINE_ICONS/canabidiol_ice_furnace.png", Rect2(157, 52, 506, 467)],
+	"maq_ice": ["res://src/ASSETS/MACHINE_ICONS/canabidiol_ice_furnace.png", Rect2(762, 46, 477, 472)],
+	"fornalha": ["res://src/ASSETS/MACHINE_ICONS/canabidiol_ice_furnace.png", Rect2(765, 550, 480, 461)],
+	"bancada": ["res://src/ASSETS/MACHINE_ICONS/prensaauto_haxixe_madeiraextrator.png", Rect2(69, 260, 401, 539)],
+	"maq_haxixe": ["res://src/ASSETS/MACHINE_ICONS/prensaauto_haxixe_madeiraextrator.png", Rect2(530, 265, 366, 534)],
+	"extrator_madeira": ["res://src/ASSETS/MACHINE_ICONS/prensaauto_haxixe_madeiraextrator.png", Rect2(926, 294, 290, 478)],
+	"maq_baseado": ["res://src/ASSETS/MACHINE_ICONS/prensado_and_mix.png", Rect2(196, 596, 449, 412)],
+	"maq_blend": ["res://src/ASSETS/MACHINE_ICONS/prensado_and_mix.png", Rect2(759, 563, 489, 466)],
 }
 
 # Estufas: consomem 1 semente + agua por ciclo, produzem buds (GDD §5).

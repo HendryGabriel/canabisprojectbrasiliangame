@@ -565,7 +565,12 @@ class Slot extends Control:
 	static var _tex_cache := {}
 	static func _spr(tipo: String) -> Texture2D:
 		if not _tex_cache.has(tipo):
-			_tex_cache[tipo] = ImageTexture.create_from_image(load(Defs.MACHINE_SPRITES[tipo]).get_image())
+			var info: Array = Defs.MACHINE_SPRITES[tipo]
+			var img: Image = load(info[0]).get_image()
+			var r: Rect2 = info[1]
+			if r.size.x > 0:
+				img = img.get_region(Rect2i(r))
+			_tex_cache[tipo] = ImageTexture.create_from_image(img)
 		return _tex_cache[tipo]
 
 	func _gui_input(ev: InputEvent) -> void:
