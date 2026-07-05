@@ -14,8 +14,8 @@ const DIRS := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 
 enum T { GRAMA, AGUA, ARVORE, AREIA, PISO, BECO }
 
-const W := 64
-const H := 36
+const W := 160
+const H := 104
 
 var tick := 0
 var money := 80
@@ -68,24 +68,32 @@ func _physics_process(_d: float) -> void:
 func _gerar_terreno() -> void:
 	terreno.resize(W * H)
 	terreno.fill(T.GRAMA)
+	# --- area inicial (identica ao mapa antigo, nao muda o comeco) ---
 	for x in range(4, 11):
 		for y in range(3, 9):
 			_set_t(x, y, T.PISO)  # casa
 	for x in range(0, 2):
 		for y in range(4, 12):
 			_set_t(x, y, T.BECO)  # beco escuro
-	_rect_t(Rect2i(30, 7, 6, 4), T.AGUA)      # lago (lote 1)
-	for x in range(3, 23):
-		for y in range(23, 33):
-			if (x * 7 + y * 13) % 7 == 0:
-				_set_t(x, y, T.ARVORE)         # bosque (lote 2)
-	_rect_t(Rect2i(29, 25, 9, 6), T.AREIA)     # areial (lote 3)
-	_rect_t(Rect2i(48, 8, 6, 5), T.AGUA)       # lote 4
-	for x in range(44, 63):
-		for y in range(22, 34):
-			if (x * 5 + y * 11) % 6 == 0:
+	_rect_t(Rect2i(30, 7, 6, 4), T.AGUA)       # lago perto do inicio
+	_bosque(Rect2i(3, 23, 20, 10), 7)          # bosque perto do inicio
+	_rect_t(Rect2i(29, 25, 9, 6), T.AREIA)      # areial perto do inicio
+	# --- recursos espalhados pelo mapa grande (para expansao) ---
+	_rect_t(Rect2i(64, 8, 14, 9), T.AGUA)       # lago leste
+	_bosque(Rect2i(62, 55, 40, 30), 6)          # bosque sul
+	_rect_t(Rect2i(110, 30, 18, 11), T.AREIA)   # areial leste
+	_rect_t(Rect2i(122, 62, 15, 10), T.AGUA)    # lago longe
+	_bosque(Rect2i(8, 68, 44, 32), 6)           # bosque sudoeste
+	_rect_t(Rect2i(70, 90, 18, 11), T.AREIA)    # areial sul
+	_rect_t(Rect2i(134, 84, 16, 12), T.AGUA)    # lago sudeste
+
+
+func _bosque(r: Rect2i, densidade: int) -> void:
+	# arvores esparsas dentro do retangulo (deterministico, sem random)
+	for x in range(r.position.x, mini(r.end.x, W)):
+		for y in range(r.position.y, mini(r.end.y, H)):
+			if (x * 7 + y * 13) % densidade == 0:
 				_set_t(x, y, T.ARVORE)
-	_rect_t(Rect2i(52, 17, 7, 4), T.AREIA)
 
 
 func _set_t(x: int, y: int, t: int) -> void:
