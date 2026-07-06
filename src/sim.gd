@@ -24,8 +24,11 @@ var meta_atual := 0
 var vendas := {}         # produto -> total vendido
 var venceu := false
 
-var _chunks := {}        # Vector2i -> PackedByteArray (cache do terreno procedural)
-var _limpo := {}         # celulas de mato limpas pelo player (estado da sim, entra no hash)
+var _limpo := {}         # celulas de mato/pedra limpas pelo player (estado da sim, entra no hash)
+var _map_rect := Rect2i(Vector2i(-8, -6), Vector2i(80, 60))
+var _map_terrain := {}   # Vector2i -> T.* vindo dos TileMapLayers manuais
+var _map_obstacles := {} # Vector2i -> T.ARVORE/T.MATO/T.PEDRA vindo das camadas manuais
+var _has_manual_map := false
 var next_id := 1
 var ents := {}           # id -> Dictionary
 var grid := {}           # Vector2i -> id (toda celula coberta)
@@ -60,123 +63,54 @@ func _physics_process(_d: float) -> void:
 		_step()
 
 
-# ---------------- terreno procedural (estilo Minecraft: chunks por seed) ----------------
-# O mundo e uma FUNCAO PURA de (x, y, SEED): qualquer maquina, em qualquer ordem de
-# visita, gera o mesmo terreno — obrigatorio pro lockstep (GDD §9). Chunks sao so cache.
-# Em cima (y<0) fica a cidade (limite do mapa); a zona da casa e feita a mao e garante
-# agua/arvores/areia a poucos tiles de distancia.
+# ---------------- terreno manual (TileMap) ----------------
+# O mundo jogavel vem dos TileMapLayers pintados em src/main.tscn.
+# A Sim so guarda a classificacao logica de cada celula.
 
-const CHUNK := 16
-const SEMENTE_MUNDO := 420133742  # troque para gerar outro mundo
-
-const ZONA_CASA := Rect2i(0, 0, 42, 34)  # feita a mao (casa, beco, recursos iniciais)
-
-func pegar_chunk(cc: Vector2i) -> PackedByteArray:
-	var ch: PackedByteArray = _chunks.get(cc, PackedByteArray())
-	if ch.is_empty():
-		ch.resize(CHUNK * CHUNK)
-		for dy in CHUNK:
-			for dx in CHUNK:
-				ch[dy * CHUNK + dx] = _gen_tile(cc.x * CHUNK + dx, cc.y * CHUNK + dy)
-		_chunks[cc] = ch
-	return ch
+func set_manual_map(terrain: Dictionary, obstacles: Dictionary, bounds: Rect2i) -> void:
+	_map_terrain = terrain.duplicate()
+	_map_obstacles = obstacles.duplicate()
+	_map_rect = bounds
+	_has_manual_map = true
+	_limpo.clear()
 
 
-func terreno_em(c: Vector2i) -> int:
-	if c.y < 0:
-		return T.CIDADE
-	var cc := Vector2i(_fdiv(c.x, CHUNK), _fdiv(c.y, CHUNK))
-	var t: int = pegar_chunk(cc)[posmod(c.y, CHUNK) * CHUNK + posmod(c.x, CHUNK)]
-	if (t == T.MATO or t == T.PEDRA) and _limpo.has(c):
-		return T.GRAMA  # obstaculo ja removido pelo player
-	return t
+func map_bounds() -> Rect2i:
+	return _map_rect
 
 
-func dentro_do_mapa(c: Vector2i) -> bool:
-	return c.y >= 0  # acima e a cidade; resto do mundo e infinito
+func coord_label(c: Vector2i) -> String:
+	return "X:%d Y:%d" % [c.x, c.y]
 
 
-func _gen_tile(x: int, y: int) -> int:
-	if y < 0:
-		return T.CIDADE
-	if ZONA_CASA.has_point(Vector2i(x, y)):
-		if x >= 4 and x < 11 and y >= 3 and y < 9:
-			return T.PISO   # casa
-		if x >= 0 and x < 2 and y >= 4 and y < 12:
-			return T.BECO   # beco escuro
-		# lago garantido (blob organico, com praia fina)
-		if _d2(x, y, 32, 8) <= 7 or _d2(x, y, 34, 9) <= 5:
-			return T.AGUA
-		if _d2(x, y, 32, 8) <= 13 or _d2(x, y, 34, 9) <= 10:
-			return T.AREIA
-		if _d2(x, y, 33, 27) <= 14:
-			return T.AREIA  # areial garantido
-		if x >= 3 and x < 23 and y >= 23 and y < 33 and (x * 7 + y * 13) % 9 == 0:
-			return T.ARVORE # bosque garantido (esparso)
-		# mato e pedras leves no quintal, longe da casa/porta (nao atrapalha o tutorial)
-		if x >= 16 or y >= 16:
-			if _h(x, y, 21) % 100 < 6:
-				return T.MATO
-			if _h(x, y, 22) % 100 < 3:
-				return T.PEDRA
+func decor_cells() -> Array:
+	return _map_obstacles.keys()
+
+
+func decor_terrain(c: Vector2i) -> int:
+	if _limpo.has(c):
 		return T.GRAMA
-	# lagos raros e espacados: UNIAO de circulos (1 possivel por supercelula de 32x32).
-	# checar cada lago independente evita as "mordidas" quando dois lagos se encostam.
-	var agua := false
-	var praia := false
-	var perto_da_agua := false
-	var sx0 := _fdiv(x, 32)
-	var sy0 := _fdiv(y, 32)
-	for sy in range(sy0 - 1, sy0 + 2):
-		for sx in range(sx0 - 1, sx0 + 2):
-			if _h(sx, sy, 1) % 100 < 12:
-				var cx := sx * 32 + 8 + _h(sx, sy, 2) % 16
-				var cy := sy * 32 + 8 + _h(sx, sy, 3) % 16
-				var d := (x - cx) * (x - cx) + (y - cy) * (y - cy)
-				var r := 3 + _h(sx, sy, 4) % 4
-				if d <= r * r:
-					agua = true
-				elif d <= (r + 1) * (r + 1):
-					praia = true
-				if d <= (r + 3) * (r + 3):
-					perto_da_agua = true  # vegetacao nunca colada na agua
-	if agua:
-		return T.AGUA
-	if praia:
-		return T.AREIA
-	# florestas em manchas (regiao 8x8 define mata fechada / esparsa / campo aberto)
-	if not perto_da_agua:
-		var f := _h(x >> 3, y >> 3, 5) % 100
-		var dens := 20 if f < 15 else (3 if f < 45 else 0)
-		if dens > 0 and _h(x, y, 6) % 100 < dens:
-			return T.ARVORE
-		# mato alto em manchas — o player limpa com E pra liberar o terreno
-		var m := _h(x >> 3, y >> 3, 20) % 100
-		if _h(x, y, 21) % 100 < (22 if m < 30 else 4):
-			return T.MATO
-	# pedras esparsas — obstaculo que o player tira com E
-	if _h(x, y, 22) % 100 < 2:
-		return T.PEDRA
-	return T.GRAMA
+	return _map_obstacles.get(c, terreno_em(c))
 
 
-static func _d2(x: int, y: int, cx: int, cy: int) -> int:
-	return (x - cx) * (x - cx) + (y - cy) * (y - cy)
-
-
-static func _h(x: int, y: int, sal: int) -> int:
-	# hash inteiro deterministico (mesmo resultado em toda maquina — lockstep)
-	var n := x * 374761393 + y * 668265263 + sal * 974634541 + SEMENTE_MUNDO
+func cell_hash(c: Vector2i, salt: int) -> int:
+	var n := c.x * 374761393 + c.y * 668265263 + salt * 974634541
 	n = (n ^ (n >> 13)) * 1274126177
 	return (n ^ (n >> 16)) & 0x7fffffff
 
 
-static func _fdiv(a: int, b: int) -> int:
-	@warning_ignore("integer_division")
-	var q := a / b
-	if (a % b != 0) and ((a < 0) != (b < 0)):
-		q -= 1
-	return q
+func terreno_em(c: Vector2i) -> int:
+	if not _map_rect.has_point(c):
+		return T.CIDADE
+	var base: int = _map_terrain.get(c, T.GRAMA if c.y >= 0 else T.CIDADE)
+	if _map_obstacles.has(c) and not _limpo.has(c):
+		return _map_obstacles[c]
+	return base
+
+
+func dentro_do_mapa(c: Vector2i) -> bool:
+	return _map_rect.has_point(c) and terreno_em(c) != T.CIDADE
+
 
 
 # ---------------- entidades ----------------

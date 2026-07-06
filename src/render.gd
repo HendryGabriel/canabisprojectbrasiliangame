@@ -1,6 +1,6 @@
 extends Node2D
-# Renderizador procedural detalhado: desenha o estado da Sim por cima (GDD §9).
-# Tudo em codigo — quando os sprites chegarem em assets/, substituem estes desenhos
+# Renderizador procedural detalhado: desenha o estado da Sim por cima (GDD Â§9).
+# Tudo em codigo â€” quando os sprites chegarem em assets/, substituem estes desenhos
 # sem tocar na simulacao.
 
 const DefsData := preload("res://src/defs.gd")
@@ -47,25 +47,14 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-# ---------------- decor procedural: pedras, vegetacao e arvores dos atlases ----------------
-# Rects vem dos manifests (Rocks_sprites.html / Vegetation_sprites.html).
-# Arvore = tronco (vegetation_022/023) + copa (vegetation_006..009).
-# Cada chunk gera sua lista de sprites UMA vez (funcao pura do hash da Sim) e ela fica
-# em cache — por frame e so draw_texture_rect_region dos chunks visiveis.
+# ---------------- decor manual: pedras, vegetacao e arvores dos atlases ----------------
+# As celulas vem das camadas ObjectsTrees, ObjectsTallGrass e ObjectsRocks.
 
 const VEG_TRONCOS := [Rect2(197, 65, 34, 31), Rect2(196, 98, 39, 46)]
-# copas: 0..2 = verdes, 3 = marrom (peso: verdes dominam)
 const VEG_COPAS := [Rect2(2, 5, 43, 91), Rect2(50, 5, 43, 91), Rect2(98, 5, 43, 91), Rect2(146, 5, 43, 91)]
-# pedras CINZAS (obstaculo em cima da grama, some com E)
 const PEDRAS_CINZAS := [Rect2(131, 19, 26, 27), Rect2(161, 17, 31, 14), Rect2(144, 51, 15, 10)]
-# [atlas(0=rocks,1=veg), rect] — so a areia tem decor (pedras marrons)
-const DECOR_AREIA := [
-	[0, Rect2(65, 17, 31, 14)], [0, Rect2(81, 68, 11, 9)], [0, Rect2(68, 69, 8, 7)],
-	[0, Rect2(48, 51, 15, 10)], [0, Rect2(36, 85, 8, 6)],
-]
 
 var _atlas: Array = [null, null, null]  # [rocks, vegetation, tallgrass]
-var _decor_chunks := {}                 # Vector2i -> Array de {a, src, dst}
 var _arado: Texture2D                   # terra arada (sprite do canteiro)
 
 
@@ -77,69 +66,55 @@ func _carrega_atlases() -> void:
 	var ar: Image = load("res://src/ASSETS/STATIC/arado.png").get_image()
 	ar.convert(Image.FORMAT_RGBA8)
 	_arado = ImageTexture.create_from_image(ar.get_region(ar.get_used_rect()))  # corta o fundo
-	# mato limpo muda o terreno -> invalida o cache de decor daquele chunk
-	Sim.mato_limpo.connect(func(cell: Vector2i):
-		_decor_chunks.erase(Vector2i(Sim._fdiv(cell.x, Sim.CHUNK), Sim._fdiv(cell.y, Sim.CHUNK))))
-
-
-func _decor_do_chunk(cc: Vector2i) -> Array:
-	var lista: Array = []
-	for dy in Sim.CHUNK:
-		for dx in Sim.CHUNK:
-			var x: int = cc.x * Sim.CHUNK + dx
-			var y: int = cc.y * Sim.CHUNK + dy
-			var t := Sim.terreno_em(Vector2i(x, y))
-			var base := Vector2((x + 0.5) * TILE, (y + 1) * TILE)  # centro-baixo do tile
-			if t == Sim.T.ARVORE:
-				var tr: Rect2 = VEG_TRONCOS[Sim._h(x, y, 10) % VEG_TRONCOS.size()]
-				# copa com cor coerente por regiao; 0 e 1 sao verdes, 2 e 3 amarronzadas
-				# -> 90% verde, 10% amarronzada ("mais verdinhos do que marrons")
-				var sorteio := Sim._h(x >> 3, y >> 3, 11) % 20
-				var co: Rect2 = VEG_COPAS[0]
-				if sorteio >= 9 and sorteio < 18:
-					co = VEG_COPAS[1]
-				elif sorteio == 18:
-					co = VEG_COPAS[2]
-				elif sorteio == 19:
-					co = VEG_COPAS[3]
-				var th := TILE * 1.6
-				var tw := tr.size.x * th / tr.size.y
-				var ch := TILE * 3.6
-				var cw := co.size.x * ch / co.size.y
-				lista.append({"a": 1, "src": tr, "dst": Rect2(base.x - tw * 0.5, base.y - th, tw, th)})
-				lista.append({"a": 1, "src": co, "dst": Rect2(base.x - cw * 0.5, base.y - th * 0.7 - ch, cw, ch)})
-			elif t == Sim.T.PEDRA:
-				var pr: Rect2 = PEDRAS_CINZAS[Sim._h(x, y, 17) % PEDRAS_CINZAS.size()]
-				var ph := minf(TILE * 1.1, pr.size.y * TILE / 16.0)
-				var pw := pr.size.x * ph / pr.size.y
-				lista.append({"a": 0, "src": pr, "dst": Rect2(base.x - pw * 0.5, base.y - ph, pw, ph)})
-			elif t == Sim.T.MATO:
-				var tex2: Texture2D = _atlas[2]
-				var lado := float(TILE) * (0.9 + 0.25 * (Sim._h(x, y, 16) % 3))
-				lista.append({"a": 2, "src": Rect2(Vector2.ZERO, tex2.get_size()), "dst": Rect2(base.x - lado * 0.5, base.y - lado, lado, lado)})
-			elif t == Sim.T.AREIA and Sim._h(x, y, 14) % 100 < 6:
-				var d2: Array = DECOR_AREIA[Sim._h(x, y, 15) % DECOR_AREIA.size()]
-				var r2: Rect2 = d2[1]
-				lista.append({"a": d2[0], "src": r2, "dst": Rect2(base.x - r2.size.x * 0.5, base.y - r2.size.y, r2.size.x, r2.size.y)})
-	return lista
 
 
 func _draw_decor(vis: Rect2) -> void:
-	# ponytail: cache sem LRU — se passar do teto, limpa tudo e rebaka os visiveis (barato)
-	if _decor_chunks.size() > 600:
-		_decor_chunks.clear()
-	var alcance := vis.grow(TILE * 6)  # arvores (copa grande) vazam ~5 tiles do proprio chunk
-	var c0 := Vector2i(Sim._fdiv(int(alcance.position.x / TILE), Sim.CHUNK), Sim._fdiv(int(alcance.position.y / TILE), Sim.CHUNK))
-	var c1 := Vector2i(Sim._fdiv(int(alcance.end.x / TILE), Sim.CHUNK), Sim._fdiv(int(alcance.end.y / TILE), Sim.CHUNK))
-	for cy in range(maxi(c0.y, 0), c1.y + 1):
-		for cx in range(c0.x, c1.x + 1):
-			var cc := Vector2i(cx, cy)
-			var lista: Array = _decor_chunks.get(cc, [])
-			if lista.is_empty() and not _decor_chunks.has(cc):
-				lista = _decor_do_chunk(cc)
-				_decor_chunks[cc] = lista
-			for e in lista:
-				draw_texture_rect_region(_atlas[e["a"]], e["dst"], e["src"])
+	var alcance := vis.grow(TILE * 6)
+	for cell in Sim.decor_cells():
+		var t := Sim.decor_terrain(cell)
+		if t == Sim.T.GRAMA:
+			continue
+		var base := Vector2((cell.x + 0.5) * TILE, (cell.y + 1) * TILE)
+		if not alcance.has_point(base):
+			continue
+		match t:
+			Sim.T.ARVORE:
+				_draw_tree_decor(cell, base)
+			Sim.T.PEDRA:
+				_draw_rock_decor(cell, base)
+			Sim.T.MATO:
+				_draw_tallgrass_decor(cell, base)
+
+
+func _draw_tree_decor(cell: Vector2i, base: Vector2) -> void:
+	var tr: Rect2 = VEG_TRONCOS[Sim.cell_hash(cell, 10) % VEG_TRONCOS.size()]
+	var sorteio := Sim.cell_hash(cell, 11) % 20
+	var co: Rect2 = VEG_COPAS[0]
+	if sorteio >= 9 and sorteio < 18:
+		co = VEG_COPAS[1]
+	elif sorteio == 18:
+		co = VEG_COPAS[2]
+	elif sorteio == 19:
+		co = VEG_COPAS[3]
+	var th := TILE * 1.6
+	var tw := tr.size.x * th / tr.size.y
+	var ch := TILE * 3.6
+	var cw := co.size.x * ch / co.size.y
+	draw_texture_rect_region(_atlas[1], Rect2(base.x - tw * 0.5, base.y - th, tw, th), tr)
+	draw_texture_rect_region(_atlas[1], Rect2(base.x - cw * 0.5, base.y - th * 0.7 - ch, cw, ch), co)
+
+
+func _draw_rock_decor(cell: Vector2i, base: Vector2) -> void:
+	var pr: Rect2 = PEDRAS_CINZAS[Sim.cell_hash(cell, 17) % PEDRAS_CINZAS.size()]
+	var ph := minf(TILE * 1.1, pr.size.y * TILE / 16.0)
+	var pw := pr.size.x * ph / pr.size.y
+	draw_texture_rect_region(_atlas[0], Rect2(base.x - pw * 0.5, base.y - ph, pw, ph), pr)
+
+
+func _draw_tallgrass_decor(cell: Vector2i, base: Vector2) -> void:
+	var tex2: Texture2D = _atlas[2]
+	var lado := float(TILE) * (0.9 + 0.25 * (Sim.cell_hash(cell, 16) % 3))
+	draw_texture_rect_region(tex2, Rect2(base.x - lado * 0.5, base.y - lado, lado, lado), Rect2(Vector2.ZERO, tex2.get_size()))
 
 
 # ---------------- draw principal ----------------
@@ -271,7 +246,7 @@ func _draw_esteira(e: Dictionary, px: Rect2) -> void:
 	if frente == null or frente["t"] != "esteira":
 		_tampa_esteira(px, v, trilho)
 	if e["item"] != "":
-		# interpolacao suave entre ticks (GDD §9: sim discreta, visual fluido)
+		# interpolacao suave entre ticks (GDD Â§9: sim discreta, visual fluido)
 		var frac := clampf((e["prog"] + Sim._frame_acc / float(Sim.FRAMES_POR_TICK)) / Sim.BELT_T, 0.0, 1.0)
 		_draw_item(c + v * (frac - 0.5) * TILE, e["item"])
 
@@ -394,13 +369,13 @@ func _draw_canteiro(e: Dictionary, px: Rect2) -> void:
 	var c := px.get_center()
 	var cor: Color = COR_CEPA.get(e["cepa"], Color(0.4, 0.7, 0.3))
 	match fase:
-		1:  # plantado, seco — esperando rega
+		1:  # plantado, seco â€” esperando rega
 			draw_circle(c, 3, Color(0.75, 0.65, 0.40))
 			draw_string(_fonte, px.position + Vector2(1, 11), "seco!", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color.YELLOW)
-		2:  # crescendo — broto escala com o tempo
+		2:  # crescendo â€” broto escala com o tempo
 			var g: float = clampf(float(e["tempo"]) / Defs.STRAINS[e["cepa"]]["grow"], 0.0, 1.0)
 			_draw_planta(c + Vector2(0, 6), 4.0 + g * 10.0, cor.darkened(0.15))
-		3:  # pronto — pe cheio de buds brilhando
+		3:  # pronto â€” pe cheio de buds brilhando
 			_draw_planta(c + Vector2(0, 6), 14.0, cor)
 			for i in 3:
 				draw_circle(c + Vector2([-6, 6, 0][i], [-4, -4, -12][i]), 3, cor.lightened(0.35))
@@ -468,7 +443,7 @@ func _draw_maquina(e: Dictionary, px: Rect2) -> void:
 		for canto in [px.position + Vector2(5, 5), Vector2(px.end.x - 5, px.position.y + 5), px.position + Vector2(5, px.size.y - 5), px.end - Vector2(5, 5)]:
 			draw_circle(canto, 1.5, cor.darkened(0.5))  # parafusos
 		_icone_maquina(t, px.get_center(), px)
-	# chip da cepa travada na linha (GDD §3)
+	# chip da cepa travada na linha (GDD Â§3)
 	if e.get("cepa", "") != "":
 		draw_circle(px.position + Vector2(8, 8), 5, COR_CEPA.get(e["cepa"], Color.WHITE))
 		draw_circle(px.position + Vector2(8, 8), 5, Color.BLACK, false, 1.0)

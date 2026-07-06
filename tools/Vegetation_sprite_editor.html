@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sprite Editor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      --bg: #191919;
+      --panel: #242424;
+      --line: #3a3a3a;
+      --text: #eeeeee;
+      --muted: #ababab;
+      --accent: #72c4ff;
+      --danger: #ff756c;
+      --warn: #f2d18b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    button, input, select {
+      font: inherit;
+    }
+    button {
+      border: 1px solid #4a4a4a;
+      border-radius: 5px;
+      background: #303030;
+      color: var(--text);
+      padding: 7px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover { border-color: #666; background: #393939; }
+    button.primary { border-color: #4286b8; background: #24506d; }
+    button.danger { border-color: #84413d; color: #ffd2cf; }
+    input, select {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid #3f3f3f;
+      border-radius: 4px;
+      background: #1d1d1d;
+      color: var(--text);
+      padding: 6px 8px;
+    }
+    input[type="checkbox"] {
+      width: auto;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 280px minmax(420px, 1fr) 320px;
+      grid-template-rows: 54px 1fr;
+      height: 100vh;
+    }
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #202020;
+    }
+    h1 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .status {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 360px;
+      font-size: 13px;
+    }
+    .sidebar, .inspector {
+      min-height: 0;
+      overflow: hidden;
+      background: var(--panel);
+    }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .sidebar-tools {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .search-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+    }
+    .sprite-list {
+      overflow: auto;
+      padding: 8px;
+    }
+    .sprite-item {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 9px;
+      align-items: center;
+      min-height: 68px;
+      padding: 7px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .sprite-item:hover { background: #2a2a2a; }
+    .sprite-item.selected {
+      background: #1f3b4e;
+      border-color: #407aa2;
+    }
+    .thumb-shell, .preview-shell {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background:
+        linear-gradient(45deg, #333 25%, transparent 25%),
+        linear-gradient(-45deg, #333 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #333 75%),
+        linear-gradient(-45deg, transparent 75%, #333 75%);
+      background-color: #252525;
+      background-size: 12px 12px;
+      background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+      border-radius: 4px;
+    }
+    .thumb-shell {
+      width: 56px;
+      height: 52px;
+    }
+    .thumb, .preview {
+      image-rendering: pixelated;
+      background-image: var(--atlas-url, url("Vegetation.png"));
+      background-repeat: no-repeat;
+    }
+    .item-title {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .item-meta {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    main {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: #161616;
+    }
+    .viewport-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #1e1e1e;
+    }
+    .zoom-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .zoom-label {
+      width: 58px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+    .stage-wrap {
+      overflow: auto;
+      min-width: 0;
+      min-height: 0;
+      padding: 24px;
+    }
+    .stage {
+      position: relative;
+      width: max-content;
+      height: max-content;
+      background:
+        linear-gradient(45deg, #303030 25%, transparent 25%),
+        linear-gradient(-45deg, #303030 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #303030 75%),
+        linear-gradient(-45deg, transparent 75%, #303030 75%);
+      background-color: #222;
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+      border: 1px solid #454545;
+      transform-origin: top left;
+    }
+    .atlas {
+      display: block;
+      image-rendering: pixelated;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    .box {
+      position: absolute;
+      border: 1px solid rgba(114, 196, 255, .7);
+      background: rgba(114, 196, 255, .08);
+      min-width: 1px;
+      min-height: 1px;
+      cursor: move;
+    }
+    .box:hover { border-color: #ffffff; }
+    .box.selected {
+      border-color: #ffe08a;
+      background: rgba(255, 224, 138, .12);
+      z-index: 10;
+    }
+    .box-label {
+      position: absolute;
+      left: 0;
+      top: -18px;
+      max-width: 160px;
+      padding: 2px 4px;
+      border-radius: 3px;
+      background: rgba(0, 0, 0, .74);
+      color: #fff3bf;
+      font-size: 10px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .handle {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border: 1px solid #111;
+      background: #ffe08a;
+    }
+    .handle.nw { left: -5px; top: -5px; cursor: nwse-resize; }
+    .handle.n { left: calc(50% - 4px); top: -5px; cursor: ns-resize; }
+    .handle.ne { right: -5px; top: -5px; cursor: nesw-resize; }
+    .handle.e { right: -5px; top: calc(50% - 4px); cursor: ew-resize; }
+    .handle.se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+    .handle.s { left: calc(50% - 4px); bottom: -5px; cursor: ns-resize; }
+    .handle.sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+    .handle.w { left: -5px; top: calc(50% - 4px); cursor: ew-resize; }
+    .inspector {
+      border-left: 1px solid var(--line);
+      overflow: auto;
+      padding: 12px;
+    }
+    .panel-title {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+    .preview-shell {
+      width: 100%;
+      min-height: 120px;
+      margin-bottom: 12px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+    }
+    .field {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+    .field.full { grid-column: 1 / -1; }
+    label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 31px;
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .hidden {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+      width: 1px;
+      height: 1px;
+    }
+    @media (max-width: 1100px) {
+      body { overflow: auto; }
+      .app {
+        grid-template-columns: 240px minmax(360px, 1fr);
+        grid-template-rows: 54px minmax(620px, 1fr) auto;
+        height: auto;
+        min-height: 100vh;
+      }
+      .inspector {
+        grid-column: 1 / -1;
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="toolbar">
+        <h1>Sprite Editor</h1>
+        <span class="status" id="status">Carregando manifest...</span>
+      </div>
+      <div class="toolbar">
+        <input class="hidden" id="pngFile" type="file" accept="image/png,.png">
+        <button id="importPngBtn">Importar PNG</button>
+        <input class="hidden" id="jsonFile" type="file" accept="application/json,.json">
+        <button id="importBtn">Importar JSON</button>
+        <button id="newBtn" class="primary">Novo sprite</button>
+        <button id="exportBtn" class="primary">Exportar JSON</button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="sidebar-tools">
+        <div class="search-row">
+          <input id="search" placeholder="Filtrar sprites">
+          <button id="sortBtn">Ordenar</button>
+        </div>
+        <span class="status" id="count">0 sprites</span>
+      </div>
+      <div class="sprite-list" id="spriteList"></div>
+    </aside>
+
+    <main>
+      <div class="viewport-tools">
+        <div class="zoom-controls">
+          <button id="zoomOut">-</button>
+          <span class="zoom-label" id="zoomLabel">200%</span>
+          <button id="zoomIn">+</button>
+          <button id="fitBtn">100%</button>
+        </div>
+        <span class="status">Arraste a caixa para mover; arraste os pontos para redimensionar.</span>
+      </div>
+      <div class="stage-wrap" id="stageWrap">
+        <div class="stage" id="stage">
+          <img class="atlas" id="atlas" src="Vegetation.png" alt="Vegetation atlas">
+          <div id="overlay"></div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="inspector">
+      <h2 class="panel-title">Sprite selecionado</h2>
+      <div class="preview-shell">
+        <div class="preview" id="selectedPreview"></div>
+      </div>
+      <div class="form-grid">
+        <div class="field full">
+          <label for="idInput">id</label>
+          <input id="idInput">
+        </div>
+        <div class="field full">
+          <label for="nameInput">name</label>
+          <input id="nameInput">
+        </div>
+        <div class="field">
+          <label for="xInput">x</label>
+          <input id="xInput" type="number" min="0" step="1">
+        </div>
+        <div class="field">
+          <label for="yInput">y</label>
+          <input id="yInput" type="number" min="0" step="1">
+        </div>
+        <div class="field">
+          <label for="wInput">largura</label>
+          <input id="wInput" type="number" min="1" step="1">
+        </div>
+        <div class="field">
+          <label for="hInput">altura</label>
+          <input id="hInput" type="number" min="1" step="1">
+        </div>
+        <div class="field">
+          <label for="pivotXInput">pivot x</label>
+          <input id="pivotXInput" type="number" step="1">
+        </div>
+        <div class="field">
+          <label for="pivotYInput">pivot y</label>
+          <input id="pivotYInput" type="number" step="1">
+        </div>
+        <div class="field full">
+          <label for="typeInput">suggested_type</label>
+          <input id="typeInput">
+        </div>
+        <div class="field full">
+          <label for="biomesInput">biomes</label>
+          <input id="biomesInput" placeholder="grass, dirt, sand">
+        </div>
+        <div class="field">
+          <label for="chanceInput">chance</label>
+          <input id="chanceInput" type="number" min="0" max="1" step="0.01">
+        </div>
+        <label class="check-row">
+          <input id="walkInput" type="checkbox">
+          blocks_walk
+        </label>
+        <label class="check-row">
+          <input id="buildInput" type="checkbox">
+          blocks_build
+        </label>
+      </div>
+      <div class="actions">
+        <button id="duplicateBtn">Duplicar</button>
+        <button id="deleteBtn" class="danger">Remover</button>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const IMAGE_NAME = "Vegetation.png";
+    const DEFAULT_MANIFEST = "Vegetation_sprites.json";
+    const HANDLE_NAMES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+    const state = {
+      manifest: null,
+      sprites: [],
+      selectedId: null,
+      zoom: 2,
+      atlasWidth: 400,
+      atlasHeight: 432,
+      drag: null,
+      filter: "",
+      sortByPosition: false,
+      imageName: IMAGE_NAME,
+    };
+
+    const el = {
+      status: document.getElementById("status"),
+      count: document.getElementById("count"),
+      list: document.getElementById("spriteList"),
+      stage: document.getElementById("stage"),
+      overlay: document.getElementById("overlay"),
+      atlas: document.getElementById("atlas"),
+      search: document.getElementById("search"),
+      zoomLabel: document.getElementById("zoomLabel"),
+      selectedPreview: document.getElementById("selectedPreview"),
+      jsonFile: document.getElementById("jsonFile"),
+      pngFile: document.getElementById("pngFile"),
+      inputs: {
+        id: document.getElementById("idInput"),
+        name: document.getElementById("nameInput"),
+        x: document.getElementById("xInput"),
+        y: document.getElementById("yInput"),
+        w: document.getElementById("wInput"),
+        h: document.getElementById("hInput"),
+        pivotX: document.getElementById("pivotXInput"),
+        pivotY: document.getElementById("pivotYInput"),
+        type: document.getElementById("typeInput"),
+        biomes: document.getElementById("biomesInput"),
+        chance: document.getElementById("chanceInput"),
+        walk: document.getElementById("walkInput"),
+        build: document.getElementById("buildInput"),
+      },
+    };
+
+    function setStatus(message) {
+      el.status.textContent = message;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function selectedSprite() {
+      return state.sprites.find(sprite => sprite.id === state.selectedId) || null;
+    }
+
+    function getSpritePrefix() {
+      if (state.imageName) {
+        return state.imageName.replace(/\.[^/.]+$/, "").toLowerCase();
+      }
+      return "sprite";
+    }
+
+    function normalizeSprite(sprite, index) {
+      const region = Array.isArray(sprite.region)
+        ? sprite.region
+        : [sprite.x || 0, sprite.y || 0, sprite.w || 16, sprite.h || 16];
+      const width = Math.max(1, Number(region[2] || sprite.w || 16));
+      const height = Math.max(1, Number(region[3] || sprite.h || 16));
+      const x = clamp(Number(region[0] || sprite.x || 0), 0, Math.max(0, state.atlasWidth - width));
+      const y = clamp(Number(region[1] || sprite.y || 0), 0, Math.max(0, state.atlasHeight - height));
+      
+      const prefix = getSpritePrefix();
+      const capPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      const suffix = String(index + 1).padStart(3, "0");
+      
+      return {
+        ...sprite,
+        id: sprite.id || `${prefix}_${suffix}`,
+        name: sprite.name || sprite.id || `${capPrefix}_${suffix}`,
+        x,
+        y,
+        w: width,
+        h: height,
+        region: [x, y, width, height],
+        suggested_type: sprite.suggested_type || "decor",
+        biomes: Array.isArray(sprite.biomes) ? sprite.biomes : [],
+        chance: Number(sprite.chance ?? 1),
+        blocks_walk: Boolean(sprite.blocks_walk),
+        blocks_build: Boolean(sprite.blocks_build),
+        pivot: Array.isArray(sprite.pivot) ? sprite.pivot : [Math.floor(width / 2), height - 1],
+      };
+    }
+
+    function updateSpriteRegion(sprite) {
+      sprite.x = clamp(Math.round(sprite.x), 0, Math.max(0, state.atlasWidth - 1));
+      sprite.y = clamp(Math.round(sprite.y), 0, Math.max(0, state.atlasHeight - 1));
+      sprite.w = clamp(Math.round(sprite.w), 1, state.atlasWidth - sprite.x);
+      sprite.h = clamp(Math.round(sprite.h), 1, state.atlasHeight - sprite.y);
+      sprite.region = [sprite.x, sprite.y, sprite.w, sprite.h];
+      if (!Array.isArray(sprite.pivot)) sprite.pivot = [Math.floor(sprite.w / 2), sprite.h - 1];
+    }
+
+    function loadManifest(data, sourceLabel) {
+      state.manifest = data;
+      if (data.source) {
+        state.imageName = data.source;
+        if (!el.atlas.src.startsWith("blob:")) {
+          el.atlas.src = data.source;
+          document.documentElement.style.setProperty('--atlas-url', `url("${data.source}")`);
+        }
+      }
+      state.atlasWidth = Number(data.image_size?.[0] || el.atlas.naturalWidth || 400);
+      state.atlasHeight = Number(data.image_size?.[1] || el.atlas.naturalHeight || 432);
+      state.sprites = (data.sprites || []).map(normalizeSprite);
+      state.selectedId = state.sprites[0]?.id || null;
+      setStatus(`${state.sprites.length} sprites carregados de ${sourceLabel}`);
+      renderAll();
+    }
+
+    async function loadDefaultManifest() {
+      try {
+        const response = await fetch(DEFAULT_MANIFEST, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        loadManifest(await response.json(), DEFAULT_MANIFEST);
+      } catch (error) {
+        state.manifest = {
+          source: IMAGE_NAME,
+          image_size: [state.atlasWidth, state.atlasHeight],
+          generated_by: "Vegetation_sprite_editor.html",
+          detection: { sprite_count: 0 },
+          sprites: [],
+        };
+        state.sprites = [];
+        setStatus("Nao consegui carregar o JSON automatico. Use Importar JSON.");
+        renderAll();
+      }
+    }
+
+    function renderAll() {
+      updateZoom();
+      renderOverlay();
+      renderList();
+      renderInspector();
+    }
+
+    function updateZoom() {
+      el.atlas.style.width = `${state.atlasWidth * state.zoom}px`;
+      el.atlas.style.height = `${state.atlasHeight * state.zoom}px`;
+      el.stage.style.width = `${state.atlasWidth * state.zoom}px`;
+      el.stage.style.height = `${state.atlasHeight * state.zoom}px`;
+      el.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+    }
+
+    function spriteStyle(sprite) {
+      return `
+        left:${sprite.x * state.zoom}px;
+        top:${sprite.y * state.zoom}px;
+        width:${sprite.w * state.zoom}px;
+        height:${sprite.h * state.zoom}px;
+      `;
+    }
+
+    function renderOverlay() {
+      el.overlay.innerHTML = "";
+      for (const sprite of state.sprites) {
+        updateSpriteRegion(sprite);
+        const box = document.createElement("div");
+        box.className = `box${sprite.id === state.selectedId ? " selected" : ""}`;
+        box.dataset.id = sprite.id;
+        box.style.cssText = spriteStyle(sprite);
+        const label = document.createElement("span");
+        label.className = "box-label";
+        label.textContent = sprite.id;
+        box.appendChild(label);
+        if (sprite.id === state.selectedId) {
+          for (const name of HANDLE_NAMES) {
+            const handle = document.createElement("span");
+            handle.className = `handle ${name}`;
+            handle.dataset.handle = name;
+            box.appendChild(handle);
+          }
+        }
+        el.overlay.appendChild(box);
+      }
+    }
+
+    function thumbnailStyle(sprite, scale) {
+      return `
+        width:${Math.max(1, sprite.w * scale)}px;
+        height:${Math.max(1, sprite.h * scale)}px;
+        background-position:-${sprite.x * scale}px -${sprite.y * scale}px;
+        background-size:${state.atlasWidth * scale}px ${state.atlasHeight * scale}px;
+      `;
+    }
+
+    function filteredSprites() {
+      const term = state.filter.trim().toLowerCase();
+      let sprites = state.sprites;
+      if (term) {
+        sprites = sprites.filter(sprite =>
+          sprite.id.toLowerCase().includes(term) ||
+          String(sprite.name || "").toLowerCase().includes(term) ||
+          String(sprite.suggested_type || "").toLowerCase().includes(term)
+        );
+      }
+      if (state.sortByPosition) {
+        sprites = [...sprites].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+      }
+      return sprites;
+    }
+
+    function renderList() {
+      const sprites = filteredSprites();
+      el.count.textContent = `${state.sprites.length} sprites`;
+      el.list.innerHTML = "";
+      for (const sprite of sprites) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = `sprite-item${sprite.id === state.selectedId ? " selected" : ""}`;
+        item.dataset.id = sprite.id;
+        item.innerHTML = `
+          <span class="thumb-shell"><span class="thumb" style="${thumbnailStyle(sprite, 2)}"></span></span>
+          <span>
+            <strong class="item-title">${escapeHtml(sprite.id)}</strong>
+            <span class="item-meta">${sprite.x}, ${sprite.y}, ${sprite.w}, ${sprite.h}</span>
+          </span>
+        `;
+        el.list.appendChild(item);
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      })[char]);
+    }
+
+    function renderInspector() {
+      const sprite = selectedSprite();
+      const disabled = !sprite;
+      for (const input of Object.values(el.inputs)) input.disabled = disabled;
+      document.getElementById("duplicateBtn").disabled = disabled;
+      document.getElementById("deleteBtn").disabled = disabled;
+      if (!sprite) {
+        el.selectedPreview.style.cssText = "";
+        for (const input of Object.values(el.inputs)) {
+          if (input.type === "checkbox") input.checked = false;
+          else input.value = "";
+        }
+        return;
+      }
+      el.inputs.id.value = sprite.id;
+      el.inputs.name.value = sprite.name || "";
+      el.inputs.x.value = sprite.x;
+      el.inputs.y.value = sprite.y;
+      el.inputs.w.value = sprite.w;
+      el.inputs.h.value = sprite.h;
+      el.inputs.pivotX.value = sprite.pivot?.[0] ?? Math.floor(sprite.w / 2);
+      el.inputs.pivotY.value = sprite.pivot?.[1] ?? sprite.h - 1;
+      el.inputs.type.value = sprite.suggested_type || "";
+      el.inputs.biomes.value = (sprite.biomes || []).join(", ");
+      el.inputs.chance.value = sprite.chance ?? 1;
+      el.inputs.walk.checked = Boolean(sprite.blocks_walk);
+      el.inputs.build.checked = Boolean(sprite.blocks_build);
+      el.selectedPreview.style.cssText = thumbnailStyle(sprite, 4);
+    }
+
+    function selectSprite(id) {
+      state.selectedId = id;
+      renderAll();
+      const selectedItem = el.list.querySelector(`[data-id="${CSS.escape(id)}"]`);
+      if (selectedItem) selectedItem.scrollIntoView({ block: "nearest" });
+    }
+
+    function applyInspectorChange() {
+      const sprite = selectedSprite();
+      if (!sprite) return;
+      const oldId = sprite.id;
+      const newId = el.inputs.id.value.trim() || oldId;
+      if (newId !== oldId && state.sprites.some(item => item.id === newId)) {
+        el.inputs.id.value = oldId;
+        setStatus("Ja existe um sprite com esse id.");
+        return;
+      }
+      sprite.id = newId;
+      sprite.name = el.inputs.name.value.trim() || newId;
+      sprite.x = Number(el.inputs.x.value || 0);
+      sprite.y = Number(el.inputs.y.value || 0);
+      sprite.w = Number(el.inputs.w.value || 1);
+      sprite.h = Number(el.inputs.h.value || 1);
+      sprite.pivot = [
+        Number(el.inputs.pivotX.value || 0),
+        Number(el.inputs.pivotY.value || 0),
+      ];
+      sprite.suggested_type = el.inputs.type.value.trim();
+      sprite.biomes = el.inputs.biomes.value.split(",").map(item => item.trim()).filter(Boolean);
+      sprite.chance = Number(el.inputs.chance.value || 0);
+      sprite.blocks_walk = el.inputs.walk.checked;
+      sprite.blocks_build = el.inputs.build.checked;
+      updateSpriteRegion(sprite);
+      state.selectedId = sprite.id;
+      renderAll();
+    }
+
+    function nextSpriteId() {
+      const prefix = getSpritePrefix();
+      let index = state.sprites.length + 1;
+      let id = `${prefix}_${String(index).padStart(3, "0")}`;
+      while (state.sprites.some(sprite => sprite.id === id)) {
+        index += 1;
+        id = `${prefix}_${String(index).padStart(3, "0")}`;
+      }
+      return id;
+    }
+
+    function addSprite(copyFrom = null) {
+      const id = nextSpriteId();
+      const prefix = getSpritePrefix();
+      const capPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      const index = state.sprites.length;
+      const suffix = String(index + 1).padStart(3, "0");
+      const name = `${capPrefix}_${suffix}`;
+      const source = copyFrom || { x: 0, y: 0, w: 16, h: 16 };
+      const sprite = normalizeSprite({
+        ...source,
+        id,
+        name: copyFrom ? (copyFrom.name ? `${copyFrom.name}_copia` : id) : name,
+        x: clamp(source.x + (copyFrom ? 4 : 0), 0, state.atlasWidth - source.w),
+        y: clamp(source.y + (copyFrom ? 4 : 0), 0, state.atlasHeight - source.h),
+        region: [
+          clamp(source.x + (copyFrom ? 4 : 0), 0, state.atlasWidth - source.w),
+          clamp(source.y + (copyFrom ? 4 : 0), 0, state.atlasHeight - source.h),
+          source.w,
+          source.h,
+        ],
+      }, state.sprites.length);
+      state.sprites.push(sprite);
+      state.selectedId = sprite.id;
+      setStatus(`${sprite.id} criado`);
+      renderAll();
+    }
+
+    function deleteSelected() {
+      const sprite = selectedSprite();
+      if (!sprite) return;
+      const index = state.sprites.findIndex(item => item.id === sprite.id);
+      state.sprites.splice(index, 1);
+      state.selectedId = state.sprites[Math.min(index, state.sprites.length - 1)]?.id || null;
+      setStatus(`${sprite.id} removido`);
+      renderAll();
+    }
+
+    function exportManifest() {
+      const base = state.manifest || {};
+      const sprites = state.sprites.map(sprite => {
+        updateSpriteRegion(sprite);
+        return {
+          ...sprite,
+          region: [sprite.x, sprite.y, sprite.w, sprite.h],
+        };
+      });
+      const manifest = {
+        ...base,
+        source: state.imageName || base.source || IMAGE_NAME,
+        image_size: [state.atlasWidth, state.atlasHeight],
+        edited_by: "Vegetation_sprite_editor.html",
+        detection: {
+          ...(base.detection || {}),
+          sprite_count: sprites.length,
+        },
+        sprites,
+      };
+      const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      const downloadName = state.imageName 
+        ? `${state.imageName.replace(/\.[^/.]+$/, "")}_sprites_adjusted.json`
+        : "sprites_adjusted.json";
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      URL.revokeObjectURL(link.href);
+      link.remove();
+      setStatus(`JSON ajustado exportado como ${downloadName}`);
+    }
+
+    function pointerToAtlas(event) {
+      const rect = el.stage.getBoundingClientRect();
+      return {
+        x: (event.clientX - rect.left) / state.zoom,
+        y: (event.clientY - rect.top) / state.zoom,
+      };
+    }
+
+    function startDrag(event) {
+      const box = event.target.closest(".box");
+      if (!box) return;
+      const sprite = state.sprites.find(item => item.id === box.dataset.id);
+      if (!sprite) return;
+      if (state.selectedId !== sprite.id) {
+        state.selectedId = sprite.id;
+        renderAll();
+      }
+      const point = pointerToAtlas(event);
+      state.drag = {
+        id: sprite.id,
+        handle: event.target.dataset.handle || "move",
+        startX: point.x,
+        startY: point.y,
+        original: { x: sprite.x, y: sprite.y, w: sprite.w, h: sprite.h },
+      };
+      event.preventDefault();
+      box.setPointerCapture?.(event.pointerId);
+    }
+
+    function applyDrag(event) {
+      if (!state.drag) return;
+      const sprite = selectedSprite();
+      if (!sprite || sprite.id !== state.drag.id) return;
+      const point = pointerToAtlas(event);
+      const dx = Math.round(point.x - state.drag.startX);
+      const dy = Math.round(point.y - state.drag.startY);
+      const original = state.drag.original;
+      let x = original.x;
+      let y = original.y;
+      let w = original.w;
+      let h = original.h;
+      const handle = state.drag.handle;
+
+      if (handle === "move") {
+        x = original.x + dx;
+        y = original.y + dy;
+      } else {
+        if (handle.includes("w")) {
+          x = original.x + dx;
+          w = original.w - dx;
+        }
+        if (handle.includes("e")) {
+          w = original.w + dx;
+        }
+        if (handle.includes("n")) {
+          y = original.y + dy;
+          h = original.h - dy;
+        }
+        if (handle.includes("s")) {
+          h = original.h + dy;
+        }
+      }
+
+      if (w < 1) {
+        x += w - 1;
+        w = 1;
+      }
+      if (h < 1) {
+        y += h - 1;
+        h = 1;
+      }
+      x = clamp(x, 0, state.atlasWidth - 1);
+      y = clamp(y, 0, state.atlasHeight - 1);
+      w = clamp(w, 1, state.atlasWidth - x);
+      h = clamp(h, 1, state.atlasHeight - y);
+
+      sprite.x = x;
+      sprite.y = y;
+      sprite.w = w;
+      sprite.h = h;
+      updateSpriteRegion(sprite);
+      renderOverlay();
+      renderInspector();
+      renderList();
+    }
+
+    function endDrag() {
+      state.drag = null;
+    }
+
+    el.overlay.addEventListener("pointerdown", startDrag);
+    window.addEventListener("pointermove", applyDrag);
+    window.addEventListener("pointerup", endDrag);
+    el.list.addEventListener("click", event => {
+      const item = event.target.closest(".sprite-item");
+      if (item) selectSprite(item.dataset.id);
+    });
+    el.search.addEventListener("input", event => {
+      state.filter = event.target.value;
+      renderList();
+    });
+    document.getElementById("sortBtn").addEventListener("click", () => {
+      state.sortByPosition = !state.sortByPosition;
+      renderList();
+    });
+    document.getElementById("zoomIn").addEventListener("click", () => {
+      state.zoom = clamp(state.zoom + 0.5, 0.5, 8);
+      renderAll();
+    });
+    document.getElementById("zoomOut").addEventListener("click", () => {
+      state.zoom = clamp(state.zoom - 0.5, 0.5, 8);
+      renderAll();
+    });
+    document.getElementById("fitBtn").addEventListener("click", () => {
+      state.zoom = 1;
+      renderAll();
+    });
+    document.getElementById("newBtn").addEventListener("click", () => addSprite());
+    document.getElementById("duplicateBtn").addEventListener("click", () => {
+      const sprite = selectedSprite();
+      if (sprite) addSprite(sprite);
+    });
+    document.getElementById("deleteBtn").addEventListener("click", deleteSelected);
+    document.getElementById("exportBtn").addEventListener("click", exportManifest);
+    document.getElementById("importBtn").addEventListener("click", () => el.jsonFile.click());
+    el.jsonFile.addEventListener("change", async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      loadManifest(JSON.parse(await file.text()), file.name);
+      event.target.value = "";
+    });
+    document.getElementById("importPngBtn").addEventListener("click", () => el.pngFile.click());
+    el.pngFile.addEventListener("change", event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      state.imageName = file.name;
+      const objectURL = URL.createObjectURL(file);
+      el.atlas.src = objectURL;
+      document.documentElement.style.setProperty('--atlas-url', `url("${objectURL}")`);
+      event.target.value = "";
+    });
+    for (const input of Object.values(el.inputs)) {
+      input.addEventListener("change", applyInspectorChange);
+      if (input.type !== "checkbox") input.addEventListener("keydown", event => {
+        if (event.key === "Enter") applyInspectorChange();
+      });
+    }
+
+    let defaultManifestLoaded = false;
+    el.atlas.addEventListener("load", () => {
+      state.atlasWidth = el.atlas.naturalWidth || state.atlasWidth;
+      state.atlasHeight = el.atlas.naturalHeight || state.atlasHeight;
+      if (state.manifest) {
+        state.manifest.image_size = [state.atlasWidth, state.atlasHeight];
+      }
+      if (!defaultManifestLoaded) {
+        defaultManifestLoaded = true;
+        loadDefaultManifest();
+      } else {
+        setStatus(`Imagem ${state.imageName} carregada (${state.atlasWidth}x${state.atlasHeight})`);
+        renderAll();
+      }
+    });
+    el.atlas.addEventListener("error", () => {
+      if (!defaultManifestLoaded) {
+        defaultManifestLoaded = true;
+        loadDefaultManifest();
+      } else {
+        setStatus(`Nao consegui abrir ${state.imageName}`);
+      }
+    });
+    if (el.atlas.complete && el.atlas.naturalWidth) {
+      state.atlasWidth = el.atlas.naturalWidth;
+      state.atlasHeight = el.atlas.naturalHeight;
+      defaultManifestLoaded = true;
+      loadDefaultManifest();
+    }
+  </script>
+</body>
+</html>

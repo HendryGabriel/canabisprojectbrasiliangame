@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Crafting_and_research Sprite Manifest</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: Inter, Segoe UI, Arial, sans-serif;
+            background: #181818;
+            color: #eeeeee;
+        }
+        body {
+            margin: 0;
+            padding: 24px;
+        }
+        header {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            margin: 0 0 6px;
+            font-size: 24px;
+        }
+        p {
+            margin: 0;
+            color: #bbbbbb;
+        }
+        .atlas {
+            max-width: 100%;
+            image-rendering: pixelated;
+            background:
+                linear-gradient(45deg, #333 25%, transparent 25%),
+                linear-gradient(-45deg, #333 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #333 75%),
+                linear-gradient(-45deg, transparent 75%, #333 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+            border: 1px solid #444;
+            margin-bottom: 24px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+        .card {
+            background: #242424;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 10px;
+            min-width: 0;
+        }
+        .preview-shell {
+            display: grid;
+            place-items: center;
+            height: 88px;
+            margin-bottom: 8px;
+            overflow: hidden;
+            background:
+                linear-gradient(45deg, #303030 25%, transparent 25%),
+                linear-gradient(-45deg, #303030 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #303030 75%),
+                linear-gradient(-45deg, transparent 75%, #303030 75%);
+            background-color: #222;
+            background-size: 14px 14px;
+            background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+            border-radius: 4px;
+        }
+        .preview {
+            image-rendering: pixelated;
+            background-image: url("crafting_and_research.png");
+            background-repeat: no-repeat;
+            clip-path: inset(0);
+        }
+        strong, span, code {
+            display: block;
+            overflow-wrap: anywhere;
+        }
+        span {
+            color: #bdbdbd;
+            font-size: 13px;
+            margin-top: 3px;
+        }
+        code {
+            color: #f2d18b;
+            font-size: 12px;
+            margin-top: 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #222;
+            border: 1px solid #3a3a3a;
+        }
+        th, td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #333;
+            text-align: left;
+            font-size: 13px;
+        }
+        th {
+            color: #ffffff;
+            background: #2b2b2b;
+            position: sticky;
+            top: 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Crafting_and_research Sprite Manifest</h1>
+            <p>2 sprites detectados em crafting_and_research.png</p>
+        </div>
+        <p>alpha &gt; 8, merge gap 1</p>
+    </header>
+    <img class="atlas" src="crafting_and_research.png" alt="Atlas original">
+    <section class="grid">
+        
+            <article class="card">
+                <div class="preview-shell" style="min-height:1681px;">
+                    <div class="preview" style="width:1851px; height:1665px; background-position:-2253px -741px; background-size:4344px 3258px;"></div>
+                </div>
+                <strong>crafting_and_research_001</strong>
+                <span>tree_or_large_bush</span>
+                <code>751, 247, 617, 555</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:1564px;">
+                    <div class="preview" style="width:1743px; height:1548px; background-position:-240px -858px; background-size:4344px 3258px;"></div>
+                </div>
+                <strong>crafting_and_research_002</strong>
+                <span>tree_or_large_bush</span>
+                <code>80, 286, 581, 516</code>
+            </article>
+            
+    </section>
+    <table>
+        <thead>
+            <tr>
+                <th>id</th>
+                <th>x</th>
+                <th>y</th>
+                <th>w</th>
+                <th>h</th>
+                <th>pixels</th>
+                <th>sugestao</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                <td>crafting_and_research_001</td>
+                <td>751</td>
+                <td>247</td>
+                <td>617</td>
+                <td>555</td>
+                <td>298596</td>
+                <td>tree_or_large_bush</td>
+            </tr>
+            
+            <tr>
+                <td>crafting_and_research_002</td>
+                <td>80</td>
+                <td>286</td>
+                <td>581</td>
+                <td>516</td>
+                <td>275788</td>
+                <td>tree_or_large_bush</td>
+            </tr>
+            
+        </tbody>
+    </table>
+</body>
+</html>

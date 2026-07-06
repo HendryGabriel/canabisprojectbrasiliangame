@@ -15,6 +15,7 @@ var _topo: Label
 var _inv_lbl: Label
 var _msg_lbl: Label
 var _dica_lbl: Label
+var _coord_lbl: Label
 var _msg_timer := 0.0
 var _hotbar: HBoxContainer
 var _shop: PanelContainer
@@ -40,6 +41,8 @@ func _ready() -> void:
 	_dica_lbl.modulate = Color(0.6, 0.9, 1.0)
 	_msg_lbl = _label(Vector2(8, 76), 18)
 	_msg_lbl.modulate = Color.YELLOW
+	_coord_lbl = _label(Vector2(8, 104), 13)
+	_coord_lbl.modulate = Color(0.85, 0.95, 1.0)
 
 	var barras := Barras.new()
 	barras.position = Vector2(8, 26)
@@ -108,6 +111,7 @@ func _process(delta: float) -> void:
 	var devtag := "  [ MODO DEV — F2 ]" if Sim.dev else ""
 	_topo.text = "$ %d   |   Tier %d   |   %s   |   %d fps%s" % [Sim.money, Sim.tier, meta, Engine.get_frames_per_second(), devtag]
 	_topo.modulate = Color(1, 0.6, 1) if Sim.dev else Color.WHITE
+	_coord_lbl.text = _coord_text()
 	_dica_lbl.text = _dica()
 	_atualiza_hover()
 	_atualiza_tutorial()
@@ -228,6 +232,11 @@ func _tenta_construir(cell: Vector2i) -> void:
 func _mouse_cell() -> Vector2i:
 	var main := get_parent() as Node2D
 	return Vector2i((main.get_global_mouse_position() / TILE).floor())
+
+
+func _coord_text() -> String:
+	var mc := _mouse_cell()
+	return "Mouse %s   |   Player %s" % [Sim.coord_label(mc), Sim.coord_label(Sim.player_cell)]
 
 
 # ---------------- loja (PC) ----------------

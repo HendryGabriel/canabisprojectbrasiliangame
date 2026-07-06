@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Prensado_and_mix Sprite Manifest</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: Inter, Segoe UI, Arial, sans-serif;
+            background: #181818;
+            color: #eeeeee;
+        }
+        body {
+            margin: 0;
+            padding: 24px;
+        }
+        header {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            margin: 0 0 6px;
+            font-size: 24px;
+        }
+        p {
+            margin: 0;
+            color: #bbbbbb;
+        }
+        .atlas {
+            max-width: 100%;
+            image-rendering: pixelated;
+            background:
+                linear-gradient(45deg, #333 25%, transparent 25%),
+                linear-gradient(-45deg, #333 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #333 75%),
+                linear-gradient(-45deg, transparent 75%, #333 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+            border: 1px solid #444;
+            margin-bottom: 24px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+        .card {
+            background: #242424;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 10px;
+            min-width: 0;
+        }
+        .preview-shell {
+            display: grid;
+            place-items: center;
+            height: 88px;
+            margin-bottom: 8px;
+            overflow: hidden;
+            background:
+                linear-gradient(45deg, #303030 25%, transparent 25%),
+                linear-gradient(-45deg, #303030 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #303030 75%),
+                linear-gradient(-45deg, transparent 75%, #303030 75%);
+            background-color: #222;
+            background-size: 14px 14px;
+            background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+            border-radius: 4px;
+        }
+        .preview {
+            image-rendering: pixelated;
+            background-image: url("prensado_and_mix.png");
+            background-repeat: no-repeat;
+            clip-path: inset(0);
+        }
+        strong, span, code {
+            display: block;
+            overflow-wrap: anywhere;
+        }
+        span {
+            color: #bdbdbd;
+            font-size: 13px;
+            margin-top: 3px;
+        }
+        code {
+            color: #f2d18b;
+            font-size: 12px;
+            margin-top: 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #222;
+            border: 1px solid #3a3a3a;
+        }
+        th, td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #333;
+            text-align: left;
+            font-size: 13px;
+        }
+        th {
+            color: #ffffff;
+            background: #2b2b2b;
+            position: sticky;
+            top: 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Prensado_and_mix Sprite Manifest</h1>
+            <p>5 sprites detectados em prensado_and_mix.png</p>
+        </div>
+        <p>alpha &gt; 8, merge gap 1</p>
+    </header>
+    <img class="atlas" src="prensado_and_mix.png" alt="Atlas original">
+    <section class="grid">
+        
+            <article class="card">
+                <div class="preview-shell" style="min-height:2005px;">
+                    <div class="preview" style="width:6px; height:1989px; background-position:-0px -0px; background-size:4344px 3258px;"></div>
+                </div>
+                <strong>prensado_and_mix_001</strong>
+                <span>branch_or_tall_plant</span>
+                <code>0, 0, 2, 663</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:88px;">
+                    <div class="preview" style="width:24px; height:3px; background-position:-3729px -0px; background-size:4344px 3258px;"></div>
+                </div>
+                <strong>prensado_and_mix_002</strong>
+                <span>tiny_decor</span>
+                <code>1243, 0, 8, 1</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:1414px;">
+                    <div class="preview" style="width:1467px; height:1398px; background-position:-2277px -1689px; background-size:4344px 3258px;"></div>
+                </div>
+                <strong>prensado_and_mix_003</strong>
+                <span>tree_or_large_bush</span>
+                <code>759, 563, 489, 466</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:1252px;">
+                    <div class="preview" style="width:1347px; height:1236px; background-position:-588px -1788px; background-size:4344px 3258px;"></div>
+                </div>
+                <strong>prensado_and_mix_004</strong>
+                <span>tree_or_large_bush</span>
+                <code>196, 596, 449, 412</code>
+            </article>
+            
+            <article class="card">
+                <div class="preview-shell" style="min-height:1258px;">
+                    <div class="preview" style="width:6px; height:1242px; background-position:-0px -2010px; background-size:4344px 3258px;"></div>
+                </div>
+                <strong>prensado_and_mix_005</strong>
+                <span>branch_or_tall_plant</span>
+                <code>0, 670, 2, 414</code>
+            </article>
+            
+    </section>
+    <table>
+        <thead>
+            <tr>
+                <th>id</th>
+                <th>x</th>
+                <th>y</th>
+                <th>w</th>
+                <th>h</th>
+                <th>pixels</th>
+                <th>sugestao</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                <td>prensado_and_mix_001</td>
+                <td>0</td>
+                <td>0</td>
+                <td>2</td>
+                <td>663</td>
+                <td>892</td>
+                <td>branch_or_tall_plant</td>
+            </tr>
+            
+            <tr>
+                <td>prensado_and_mix_002</td>
+                <td>1243</td>
+                <td>0</td>
+                <td>8</td>
+                <td>1</td>
+                <td>8</td>
+                <td>tiny_decor</td>
+            </tr>
+            
+            <tr>
+                <td>prensado_and_mix_003</td>
+                <td>759</td>
+                <td>563</td>
+                <td>489</td>
+                <td>466</td>
+                <td>172269</td>
+                <td>tree_or_large_bush</td>
+            </tr>
+            
+            <tr>
+                <td>prensado_and_mix_004</td>
+                <td>196</td>
+                <td>596</td>
+                <td>449</td>
+                <td>412</td>
+                <td>155922</td>
+                <td>tree_or_large_bush</td>
+            </tr>
+            
+            <tr>
+                <td>prensado_and_mix_005</td>
+                <td>0</td>
+                <td>670</td>
+                <td>2</td>
+                <td>414</td>
+                <td>457</td>
+                <td>branch_or_tall_plant</td>
+            </tr>
+            
+        </tbody>
+    </table>
+</body>
+</html>

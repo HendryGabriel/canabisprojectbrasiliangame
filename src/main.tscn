@@ -13,6 +13,22 @@ script = ExtResource("1")
 z_index = -100
 tile_set = ExtResource("2_floor_tiles")
 
+[node name="FloorSand" type="TileMapLayer" parent="." unique_id=413576344]
+z_index = -99
+tile_set = ExtResource("2_floor_tiles")
+
+[node name="FloorInterior" type="TileMapLayer" parent="." unique_id=1802316376]
+z_index = -98
+tile_set = ExtResource("2_floor_tiles")
+
+[node name="FloorAlley" type="TileMapLayer" parent="." unique_id=1519868007]
+z_index = -97
+tile_set = ExtResource("2_floor_tiles")
+
+[node name="FloorCity" type="TileMapLayer" parent="." unique_id=1679217301]
+z_index = -96
+tile_set = ExtResource("2_floor_tiles")
+
 [node name="Water" type="TileMapLayer" parent="." unique_id=1845286397]
 z_index = -95
 tile_set = ExtResource("3_water_tiles")
@@ -25,3 +41,15 @@ tile_set = ExtResource("2_floor_tiles")
 [node name="InteriorWalls" type="TileMapLayer" parent="." unique_id=1128088365]
 z_index = -70
 tile_set = ExtResource("4_interior_walls")
+
+[node name="ObjectsTrees" type="TileMapLayer" parent="." unique_id=599104805]
+z_index = -60
+tile_set = ExtResource("2_floor_tiles")
+
+[node name="ObjectsTallGrass" type="TileMapLayer" parent="." unique_id=780080011]
+z_index = -59
+tile_set = ExtResource("2_floor_tiles")
+
+[node name="ObjectsRocks" type="TileMapLayer" parent="." unique_id=1817013276]
+z_index = -58
+tile_set = ExtResource("2_floor_tiles")
