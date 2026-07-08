@@ -1,348 +1,346 @@
-extends Node2D
-# Avatar: movimento livre em 8 direcoes (GDD §10). So as construcoes respeitam o grid.
-# O player NAO faz parte da sim deterministica; ele injeta comandos (cmd_*).
+extends CharacterBody3D
+class_name TrumanPlayer
 
-const DefsData := preload("res://src/defs.gd")
-const TILE := DefsData.TILE_SIZE
-const VEL := TILE * 4.6875
-const HALF_TILE := TILE * 0.5
+const FIRST_PERSON_RIG_SCENE: PackedScene = preload("res://scenes/first_person_view_rig.tscn")
+const PLAYER_BODY_RIG_SCENE: PackedScene = preload("res://scenes/player_body_rig.tscn")
 
-var ui: CanvasLayer
-var facing := Vector2i(0, 1)
-var _walk := 0.0  # fase da animacao de andar
+@export var walk_speed: float = 4.5
+@export var run_speed: float = 7.0
+@export var jump_velocity: float = 6.8
+@export var mouse_sensitivity: float = 0.0025
+@export var block_reach: float = 4.0
+@export var third_person_distance: float = 4.0
 
-const ASSET_DIR := "res://Vector Parts/"
-const SPRITE_SCALE := 0.10  # proporcional ao mundo/tiles (personagem ~2 tiles)
+var gravity: float = 18.0
+var controls_enabled: bool = true
+var yaw: float = 0.0
+var pitch: float = 0.0
+var camera_mode: int = 0
+var camera: Camera3D
+var ray: RayCast3D
+var first_person_rig: Node
+var body_rig: Node
+var visuals_enabled: bool = false
+var eye_height: float = 1.55
+var pending_skin_texture: Texture2D
+var pending_item_id: String = ""
+var pending_item_icon: Texture2D
+var pending_item_block_mesh: Mesh
+var pending_item_cube_faces: Dictionary = {}
 
-var tex_body := {}
-var tex_head := {}
-var tex_face := {}
-var tex_l_arm := {}
-var tex_r_arm := {}
-var tex_l_hand := {}
-var tex_r_hand := {}
-var tex_l_leg := {}
-var tex_r_leg := {}
+var was_on_floor: bool = true
+var prev_vel_y: float = 0.0
+var landing_bob: float = 0.0
 
-# Joint positions relative to Body center (in unscaled pixels 0..160)
-var joint_offsets := {
-	"Front": {
-		"neck": Vector2(0, -35),
-		"face": Vector2(-1, -33),
-		"l_shoulder": Vector2(45, -31),
-		"r_shoulder": Vector2(-47, -31),
-		"l_hip": Vector2(-17, 29),
-		"r_hip": Vector2(17, 29),
-		"l_wrist": Vector2(9, 44),
-		"r_wrist": Vector2(-5, 44)
-	},
-	"Back": {
-		"neck": Vector2(0, -35),
-		"face": Vector2.ZERO,
-		"l_shoulder": Vector2(45, -31),
-		"r_shoulder": Vector2(-47, -31),
-		"l_hip": Vector2(-17, 29),
-		"r_hip": Vector2(17, 29),
-		"l_wrist": Vector2(9, 44),
-		"r_wrist": Vector2(-5, 44)
-	},
-	"L View": {
-		"neck": Vector2(2, -35),
-		"face": Vector2(-45, -33),
-		"l_shoulder": Vector2(-9, -31),
-		"r_shoulder": Vector2(9, -31),
-		"l_hip": Vector2(-10, 29),
-		"r_hip": Vector2(5, 29),
-		"l_wrist": Vector2(-2, 44),
-		"r_wrist": Vector2(0, 44)
-	},
-	"R View": {
-		"neck": Vector2(-2, -35),
-		"face": Vector2(45, -33),
-		"l_shoulder": Vector2(-9, -31),
-		"r_shoulder": Vector2(9, -31),
-		"l_hip": Vector2(-5, 29),
-		"r_hip": Vector2(10, 29),
-		"l_wrist": Vector2(0, 44),
-		"r_wrist": Vector2(2, 44)
-	}
-}
-
+var collision_shape_node: CollisionShape3D = null
 
 func _ready() -> void:
-	position = Vector2(7.5, 10.5) * TILE  # porta da casa
+	camera = Camera3D.new()
+	camera.name = "Camera3D"
+	camera.current = true
+	camera.position = Vector3(0, 1.55, 0)
+	add_child(camera)
+
+	first_person_rig = FIRST_PERSON_RIG_SCENE.instantiate()
+	camera.add_child(first_person_rig)
+
+	body_rig = PLAYER_BODY_RIG_SCENE.instantiate()
+	add_child(body_rig)
+
+	ray = RayCast3D.new()
+	ray.name = "BlockRay"
+	ray.target_position = Vector3(0, 0, -block_reach)
+	ray.enabled = true
+	ray.add_exception(self)
+	camera.add_child(ray)
+
+	var shape: CollisionShape3D = CollisionShape3D.new()
+	var capsule: CapsuleShape3D = CapsuleShape3D.new()
+	capsule.height = 1.8
+	capsule.radius = 0.35
+	shape.shape = capsule
+	shape.position = Vector3(0, 0.9, 0)
+	add_child(shape)
+	collision_shape_node = shape
+	_update_camera_transform(0.0, 1.55)
+	if pending_skin_texture != null:
+		_apply_skin_to_rigs(pending_skin_texture)
+	_apply_held_item_to_rig()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not controls_enabled:
+		return
+	if event is InputEventMouseMotion and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
+		yaw -= event.relative.x * mouse_sensitivity
+		pitch -= event.relative.y * mouse_sensitivity
+		pitch = clamp(pitch, deg_to_rad(-88), deg_to_rad(88))
+		rotation.y = yaw
+		_update_camera_transform(0.0)
+
+func _physics_process(delta: float) -> void:
+	var main_game = get_parent()
+	if not is_on_floor():
+		velocity.y -= gravity * delta
+
+	# Detect landing event to calculate impact bob
+	var landed: bool = is_on_floor() and not was_on_floor
+	if landed:
+		var impact_speed: float = abs(prev_vel_y)
+		if impact_speed > 2.0:
+			landing_bob = clamp(impact_speed * 0.03, 0.0, 0.22)
 	
-	# Load textures
-	var dirs: Array[String] = ["Front", "Back", "L View", "R View"]
-	for d in dirs:
-		var suffix: String = " - " + d + ".png"
-		tex_body[d] = _load_texture(ASSET_DIR + "Body" + suffix)
-		tex_head[d] = _load_texture(ASSET_DIR + "Head" + suffix)
-		if d != "Back":
-			tex_face[d] = _load_texture(ASSET_DIR + "Face 01" + suffix)
-		tex_l_arm[d] = _load_texture(ASSET_DIR + "Left Arm" + suffix)
-		tex_r_arm[d] = _load_texture(ASSET_DIR + "Right Arm" + suffix)
-		tex_l_hand[d] = _load_texture(ASSET_DIR + "Left Hand" + suffix)
-		tex_r_hand[d] = _load_texture(ASSET_DIR + "Right Hand" + suffix)
-		tex_l_leg[d] = _load_texture(ASSET_DIR + "Left Leg" + suffix)
-		tex_r_leg[d] = _load_texture(ASSET_DIR + "Right Leg" + suffix)
-
-
-func _process(delta: float) -> void:
-	var v := Vector2.ZERO
-	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP): v.y -= 1
-	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN): v.y += 1
-	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): v.x -= 1
-	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): v.x += 1
-	if v != Vector2.ZERO:
-		_walk += delta * 11.0
-		v = v.normalized() * VEL * delta
-		facing = Vector2i(v.sign())
-		var np := position + Vector2(v.x, 0)
-		if _anda(np):
-			position = np
-		np = position + Vector2(0, v.y)
-		if _anda(np):
-			position = np
-	else:
-		_walk = 0.0
-	Sim.player_cell = Vector2i((position / TILE).floor())
-	# segurar E na bancada = prensar manual (GDD §5)
-	if Input.is_physical_key_pressed(KEY_E):
-		var alvo := _celula_alvo()
-		var e = Sim.ent_em(alvo)
-		if e != null and e["t"] == "bancada" and _perto(alvo):
-			Sim.cmd_bancada(alvo)
-	queue_redraw()
-
-
-func _unhandled_input(ev: InputEvent) -> void:
-	if ev is InputEventKey and ev.pressed and not ev.echo and ev.physical_keycode == KEY_E:
-		var alvo := _celula_alvo()
-		if not _perto(alvo):
-			return
-		var e = Sim.ent_em(alvo)
-		if e != null and e["t"] == "pc":
-			ui.toggle_shop()
-		elif e != null and e["t"] != "bancada":
-			Sim.cmd_interact(alvo)
-		elif e == null and _obstaculo(alvo):
-			Sim.cmd_interact(alvo)  # limpa mato/pedra
-
-
-func _obstaculo(c: Vector2i) -> bool:
-	var t := Sim.terreno_em(c)
-	return t == Sim.T.MATO or t == Sim.T.PEDRA
-
-
-func _celula_alvo() -> Vector2i:
-	# mira: celula do mouse se perto; senao a celula a frente do avatar
-	var m := Vector2i((get_global_mouse_position() / TILE).floor())
-	if _perto(m) and (Sim.ent_em(m) != null or _obstaculo(m)):
-		return m
-	return Vector2i((position / TILE).floor()) + facing
-
-
-func _perto(c: Vector2i) -> bool:
-	return (Vector2(c) * TILE + Vector2(HALF_TILE, HALF_TILE)).distance_to(position) < TILE * 2.5
-
-
-func _anda(p: Vector2) -> bool:
-	var c := Vector2i((p / TILE).floor())
-	var t := Sim.terreno_em(c)
-	if t == Sim.T.AGUA or t == Sim.T.ARVORE or t == Sim.T.PEDRA or not Sim.dentro_do_mapa(c):
-		return false
-	var e = Sim.ent_em(c)
-	if e != null and e["t"] != "esteira" and e["t"] != "cano" and e["t"] != "canteiro":
-		return false
-	return true
-
-
-func _draw() -> void:
-	# 1. Desenha a sombra (proporcional ao SPRITE_SCALE)
-	draw_circle(Vector2(0, SPRITE_SCALE * 40.0), SPRITE_SCALE * 50.0, Color(0, 0, 0, 0.3))
+	was_on_floor = is_on_floor()
 	
-	# 2. Determina a direcao do sprite
-	var dir := _get_dir_string()
-	var offsets = joint_offsets[dir]
+	# Smoothly decay camera landing bob
+	landing_bob = move_toward(landing_bob, 0.0, delta * 1.5)
+
+	var input_dir: Vector2 = Vector2.ZERO
+	var is_crouching: bool = false
+	var is_sprinting: bool = false
+	var speed: float = walk_speed
 	
-	# 3. Calcula valores da animacao
-	var leg_rot := 0.0
-	var arm_rot := 0.0
-	var body_bob := 0.0
-	var head_rot := 0.0
-	var head_bob := 0.0
-	
-	var leg_l_y := 0.0
-	var leg_r_y := 0.0
-	
-	if _walk > 0.0:
-		if dir == "Front" or dir == "Back":
-			# Pernas sobem/descem levemente (marchando), bracos mexem muito de leve (como na idle)
-			leg_rot = 0.0
-			arm_rot = sin(_walk * 0.5) * 0.05
-			body_bob = -absf(sin(_walk)) * 3.0
-			head_rot = 0.0
-			head_bob = -absf(sin(_walk)) * 1.0
-			leg_l_y = sin(_walk) * 4.0
-			leg_r_y = -sin(_walk) * 4.0
+	if controls_enabled:
+		input_dir = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+		
+		# Shift key to crouch (Minecraft crouch has priority over sprint)
+		if Input.is_key_pressed(KEY_SHIFT):
+			is_crouching = true
+			speed = walk_speed * 0.3
+		
+		if not is_crouching:
+			# CTRL key for sprinting (only when moving forward)
+			if Input.is_key_pressed(KEY_CTRL) and input_dir.y < -0.1:
+				is_sprinting = true
+				speed = run_speed
+
+		if Input.is_action_pressed("jump") and is_on_floor():
+			velocity.y = jump_velocity
+			if is_sprinting:
+				# Forward boost for sprint jump
+				var forward_dir = -global_transform.basis.z
+				forward_dir.y = 0
+				forward_dir = forward_dir.normalized()
+				velocity.x += forward_dir.x * 1.5
+				velocity.z += forward_dir.z * 1.5
+
+	# Update collision capsule height based on crouch state
+	if collision_shape_node != null and collision_shape_node.shape is CapsuleShape3D:
+		var capsule: CapsuleShape3D = collision_shape_node.shape
+		if is_crouching:
+			capsule.height = 1.5
+			collision_shape_node.position.y = 0.75
 		else:
-			# Visoes laterais: andar tradicional com rotacao de pernas/bracos
-			leg_rot = sin(_walk) * 0.4
-			arm_rot = -sin(_walk) * 0.3
-			body_bob = -absf(sin(_walk)) * 6.0
-			head_rot = sin(_walk) * 0.05
-			head_bob = -absf(sin(_walk)) * 2.0
+			capsule.height = 1.8
+			collision_shape_node.position.y = 0.9
+
+	# Interpolate camera height smoothly
+	var camera_target_y: float = 1.25 if is_crouching else 1.55
+	if camera != null:
+		_update_camera_transform(delta, camera_target_y - landing_bob)
+
+	var direction: Vector3 = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+	
+	if is_on_floor():
+		velocity.x = direction.x * speed
+		velocity.z = direction.z * speed
 	else:
-		# Animacao ociosa de respirar (idle)
-		var t := Time.get_ticks_msec() * 0.003
-		body_bob = sin(t) * 1.5
-		head_bob = sin(t) * 0.8
-		arm_rot = sin(t) * 0.05
-		leg_rot = 0.0
-	
-	var body_base_pos := Vector2(0, -15.0 * SPRITE_SCALE) + Vector2(0, body_bob) * SPRITE_SCALE
-	var body_pos := body_base_pos
-	var body_rot := 0.0
-	
-	# 4. Desenha as partes na ordem correta de camadas (z-index) por direcao
-	if dir == "Front":
-		# 1. Calcula as posicoes globais das articulacoes antes
-		var l_arm_info = _get_part_transform(offsets["l_shoulder"], arm_rot, body_pos, body_rot)
-		var r_arm_info = _get_part_transform(offsets["r_shoulder"], -arm_rot, body_pos, body_rot)
-		var head_info = _get_part_transform(offsets["neck"] + Vector2(0, head_bob), head_rot, body_pos, body_rot)
-		
-		# 2. Desenha na ordem do Z-Index:
-		# Z = 0: Perna Esquerda
-		_draw_part(tex_l_leg[dir], offsets["l_hip"] + Vector2(0, leg_l_y), leg_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 1: Perna Direita
-		_draw_part(tex_r_leg[dir], offsets["r_hip"] + Vector2(0, leg_r_y), -leg_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 2: Mao Esquerda
-		_draw_part(tex_l_hand[dir], offsets["l_wrist"], arm_rot * 0.5, Vector2(40, 40), l_arm_info.pos, l_arm_info.rot)
-		# Z = 2: Mao Direita
-		_draw_part(tex_r_hand[dir], offsets["r_wrist"], -arm_rot * 0.5, Vector2(40, 40), r_arm_info.pos, r_arm_info.rot)
-		# Z = 2: Corpo
-		_draw_part(tex_body[dir], Vector2.ZERO, 0.0, Vector2(80, 80), body_pos, body_rot)
-		# Z = 3: Braco Esquerdo
-		_draw_part(tex_l_arm[dir], offsets["l_shoulder"], arm_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 3: Braco Direito
-		_draw_part(tex_r_arm[dir], offsets["r_shoulder"], -arm_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 9: Cabeca
-		_draw_part(tex_head[dir], offsets["neck"] + Vector2(0, head_bob), head_rot, Vector2(160, 240), body_pos, body_rot)
-		# Z = 10: Rosto
-		_draw_part(tex_face[dir], offsets["face"], 0.0, Vector2(80, 64), head_info.pos, head_info.rot)
-		
-	elif dir == "Back":
-		# 1. Calcula as posicoes globais das articulacoes antes
-		var l_arm_info = _get_part_transform(offsets["l_shoulder"], arm_rot, body_pos, body_rot)
-		var r_arm_info = _get_part_transform(offsets["r_shoulder"], -arm_rot, body_pos, body_rot)
-		
-		# 2. Desenha na ordem do Z-Index:
-		# Z = 0: Perna Esquerda
-		_draw_part(tex_l_leg[dir], offsets["l_hip"] + Vector2(0, leg_l_y), leg_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 1: Perna Direita
-		_draw_part(tex_r_leg[dir], offsets["r_hip"] + Vector2(0, leg_r_y), -leg_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 1: Mao Esquerda
-		_draw_part(tex_l_hand[dir], offsets["l_wrist"], arm_rot * 0.5, Vector2(40, 40), l_arm_info.pos, l_arm_info.rot)
-		# Z = 1: Mao Direita
-		_draw_part(tex_r_hand[dir], offsets["r_wrist"], -arm_rot * 0.5, Vector2(40, 40), r_arm_info.pos, r_arm_info.rot)
-		# Z = 2: Braco Esquerdo
-		_draw_part(tex_l_arm[dir], offsets["l_shoulder"], arm_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 2: Braco Direito
-		_draw_part(tex_r_arm[dir], offsets["r_shoulder"], -arm_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 3: Corpo
-		_draw_part(tex_body[dir], Vector2.ZERO, 0.0, Vector2(80, 80), body_pos, body_rot)
-		# Z = 9: Cabeca
-		_draw_part(tex_head[dir], offsets["neck"] + Vector2(0, head_bob), head_rot, Vector2(160, 240), body_pos, body_rot)
-		
-	elif dir == "L View":
-		# 1. Calcula as posicoes globais das articulacoes antes
-		var l_arm_info = _get_part_transform(offsets["l_shoulder"], arm_rot, body_pos, body_rot)
-		var r_arm_info = _get_part_transform(offsets["r_shoulder"], -arm_rot, body_pos, body_rot)
-		var head_info = _get_part_transform(offsets["neck"] + Vector2(0, head_bob), head_rot, body_pos, body_rot)
-		
-		# 2. Desenha na ordem do Z-Index (L View: r_leg=0, r_hand=0, r_arm=1, l_leg=1, body=3, l_hand=4, l_arm=5, head=9, face=10):
-		# Z = 0: Perna Direita
-		_draw_part(tex_r_leg[dir], offsets["r_hip"] + Vector2(0, leg_r_y), -leg_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 0: Mao Direita
-		_draw_part(tex_r_hand[dir], offsets["r_wrist"], -arm_rot * 0.5, Vector2(40, 40), r_arm_info.pos, r_arm_info.rot)
-		# Z = 1: Perna Esquerda
-		_draw_part(tex_l_leg[dir], offsets["l_hip"] + Vector2(0, leg_l_y), leg_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 1: Braco Direito
-		_draw_part(tex_r_arm[dir], offsets["r_shoulder"], -arm_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 3: Corpo
-		_draw_part(tex_body[dir], Vector2.ZERO, 0.0, Vector2(80, 80), body_pos, body_rot)
-		# Z = 4: Mao Esquerda
-		_draw_part(tex_l_hand[dir], offsets["l_wrist"], arm_rot * 0.5, Vector2(40, 40), l_arm_info.pos, l_arm_info.rot)
-		# Z = 5: Braco Esquerdo
-		_draw_part(tex_l_arm[dir], offsets["l_shoulder"], arm_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 9: Cabeca
-		_draw_part(tex_head[dir], offsets["neck"] + Vector2(0, head_bob), head_rot, Vector2(160, 240), body_pos, body_rot)
-		# Z = 10: Rosto
-		_draw_part(tex_face[dir], offsets["face"], 0.0, Vector2(64, 64), head_info.pos, head_info.rot)
-		
-	elif dir == "R View":
-		# 1. Calcula as posicoes globais das articulacoes antes
-		var l_arm_info = _get_part_transform(offsets["l_shoulder"], arm_rot, body_pos, body_rot)
-		var r_arm_info = _get_part_transform(offsets["r_shoulder"], -arm_rot, body_pos, body_rot)
-		var head_info = _get_part_transform(offsets["neck"] + Vector2(0, head_bob), head_rot, body_pos, body_rot)
-		
-		# 2. Desenha na ordem do Z-Index (R View: l_leg=0, l_hand=0, l_arm=1, r_leg=1, body=3, r_hand=4, r_arm=5, head=9, face=10):
-		# Z = 0: Perna Esquerda
-		_draw_part(tex_l_leg[dir], offsets["l_hip"] + Vector2(0, leg_l_y), leg_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 0: Mao Esquerda
-		_draw_part(tex_l_hand[dir], offsets["l_wrist"], arm_rot * 0.5, Vector2(40, 40), l_arm_info.pos, l_arm_info.rot)
-		# Z = 1: Braco Esquerdo
-		_draw_part(tex_l_arm[dir], offsets["l_shoulder"], arm_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 1: Perna Direita (Corrigido para Z=1, atras do corpo)
-		_draw_part(tex_r_leg[dir], offsets["r_hip"] + Vector2(0, leg_r_y), -leg_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 3: Corpo
-		_draw_part(tex_body[dir], Vector2.ZERO, 0.0, Vector2(80, 80), body_pos, body_rot)
-		# Z = 4: Mao Direita
-		_draw_part(tex_r_hand[dir], offsets["r_wrist"], -arm_rot * 0.5, Vector2(40, 40), r_arm_info.pos, r_arm_info.rot)
-		# Z = 5: Braco Direito
-		_draw_part(tex_r_arm[dir], offsets["r_shoulder"], -arm_rot, Vector2(40, 25), body_pos, body_rot)
-		# Z = 9: Cabeca
-		_draw_part(tex_head[dir], offsets["neck"] + Vector2(0, head_bob), head_rot, Vector2(160, 240), body_pos, body_rot)
-		# Z = 10: Rosto
-		_draw_part(tex_face[dir], offsets["face"], 0.0, Vector2(64, 64), head_info.pos, head_info.rot)
-	
-	# Realce da celula alvo de interacao (mantido do original)
-	var alvo := _celula_alvo()
-	if _perto(alvo) and (Sim.ent_em(alvo) != null or _obstaculo(alvo)):
-		draw_rect(Rect2(Vector2(alvo * TILE) - position, Vector2(TILE, TILE)), Color(1, 1, 1, 0.5), false, 2.0)
+		# Air drag (0.98 multiplier) + air steering drift acceleration
+		velocity.x *= 0.98
+		velocity.z *= 0.98
+		if direction != Vector3.ZERO:
+			velocity.x += direction.x * speed * delta * 2.2
+			velocity.z += direction.z * speed * delta * 2.2
+			# Cap maximum horizontal air speed
+			var speed_2d = Vector2(velocity.x, velocity.z).length()
+			var max_cap = max(speed, run_speed) # Sprint speed cap
+			if speed_2d > max_cap:
+				var capped = Vector2(velocity.x, velocity.z).normalized() * max_cap
+				velocity.x = capped.x
+				velocity.z = capped.y
 
+	# Edge protection when crouching
+	if is_crouching and is_on_floor():
+		var next_pos: Vector3 = global_position + velocity * delta
+		if main_game != null and "blocks" in main_game:
+			var y_check: int = int(floor(global_position.y - 0.1))
+			
+			var radius_check: float = 0.3
+			var offsets = [
+				Vector3.ZERO,
+				Vector3(-radius_check, 0, -radius_check),
+				Vector3(radius_check, 0, -radius_check),
+				Vector3(-radius_check, 0, radius_check),
+				Vector3(radius_check, 0, radius_check)
+			]
+			
+			# Check X movement alone
+			var has_x_support: bool = false
+			var next_x_pos = Vector3(next_pos.x, global_position.y, global_position.z)
+			for offset in offsets:
+				var check_pt = next_x_pos + offset
+				var bx = int(floor(check_pt.x))
+				var bz = int(floor(check_pt.z))
+				var block_pos = Vector3i(bx, y_check, bz)
+				if main_game.has_method("_is_solid_block_at") and main_game._is_solid_block_at(block_pos):
+					has_x_support = true
+					break
+			if not has_x_support:
+				velocity.x = 0.0
+				
+			# Check Z movement alone
+			var has_z_support: bool = false
+			var next_z_pos = Vector3(global_position.x, global_position.y, next_pos.z)
+			for offset in offsets:
+				var check_pt = next_z_pos + offset
+				var bx = int(floor(check_pt.x))
+				var bz = int(floor(check_pt.z))
+				var block_pos = Vector3i(bx, y_check, bz)
+				if main_game.has_method("_is_solid_block_at") and main_game._is_solid_block_at(block_pos):
+					has_z_support = true
+					break
+			if not has_z_support:
+				velocity.z = 0.0
 
-func _load_texture(path: String) -> Texture2D:
-	if ResourceLoader.exists(path):
-		return load(path)
-	printerr("Failed to load texture at: ", path)
-	return null
+	prev_vel_y = velocity.y
+	move_and_slide()
 
+func get_block_raycast() -> RayCast3D:
+	return ray
 
-func _get_dir_string() -> String:
-	if facing.y < 0:
-		return "Back"
-	elif facing.y > 0:
-		return "Front"
-	elif facing.x < 0:
-		return "L View"
-	elif facing.x > 0:
-		return "R View"
-	return "Front"
+func get_interaction_ray_start() -> Vector3:
+	return global_position + Vector3(0, eye_height, 0)
 
+func get_interaction_ray_end() -> Vector3:
+	return get_interaction_ray_start() + get_aim_direction() * block_reach
 
-func _get_part_transform(pos: Vector2, rot: float, parent_pos: Vector2, parent_rot: float) -> Dictionary:
-	return {
-		"pos": parent_pos + (pos * SPRITE_SCALE).rotated(parent_rot),
-		"rot": parent_rot + rot
-	}
+func get_aim_direction() -> Vector3:
+	var yaw_basis: Basis = Basis(Vector3.UP, yaw)
+	var forward: Vector3 = yaw_basis * Vector3(0, 0, -1)
+	var right: Vector3 = yaw_basis * Vector3.RIGHT
+	return forward.rotated(right, pitch).normalized()
 
+func get_camera_pitch() -> float:
+	return pitch
 
-func _draw_part(tex: Texture2D, pos: Vector2, rot: float, pivot: Vector2, parent_pos := Vector2.ZERO, parent_rot := 0.0) -> Dictionary:
-	var trans := _get_part_transform(pos, rot, parent_pos, parent_rot)
-	if tex:
-		draw_set_transform(trans.pos, trans.rot, Vector2(SPRITE_SCALE, SPRITE_SCALE))
-		draw_texture(tex, -pivot)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	return trans
+func get_camera_yaw() -> float:
+	return yaw
+
+func set_view_angles(yaw_value: float, pitch_value: float) -> void:
+	yaw = yaw_value
+	rotation.y = yaw
+	set_camera_pitch(pitch_value)
+
+func set_camera_pitch(value: float) -> void:
+	pitch = clamp(value, deg_to_rad(-88), deg_to_rad(88))
+	_update_camera_transform(0.0)
+
+func set_controls_enabled(value: bool) -> void:
+	controls_enabled = value
+	if not value:
+		velocity.x = 0
+		velocity.z = 0
+
+func toggle_camera_mode() -> int:
+	camera_mode = (camera_mode + 1) % 3
+	_update_camera_transform(0.0)
+	return camera_mode
+
+func set_camera_mode(value: int) -> void:
+	camera_mode = clamp(value, 0, 2)
+	_update_camera_transform(0.0)
+
+func get_camera_mode() -> int:
+	return camera_mode
+
+func apply_skin(texture: Texture2D) -> void:
+	pending_skin_texture = texture
+	_apply_skin_to_rigs(texture)
+
+func _apply_skin_to_rigs(texture: Texture2D) -> void:
+	if first_person_rig != null:
+		first_person_rig.apply_skin(texture)
+	if body_rig != null:
+		body_rig.apply_skin(texture)
+
+func set_held_item(item_id: String, icon: Texture2D, block_mesh: Mesh, cube_faces: Dictionary = {}) -> void:
+	pending_item_id = item_id
+	pending_item_icon = icon
+	pending_item_block_mesh = block_mesh
+	pending_item_cube_faces = cube_faces
+	_apply_held_item_to_rig()
+
+func _apply_held_item_to_rig() -> void:
+	if first_person_rig != null:
+		first_person_rig.set_selected_item(pending_item_id, pending_item_icon, pending_item_block_mesh, pending_item_cube_faces)
+	if body_rig != null and body_rig.has_method("set_selected_item"):
+		body_rig.set_selected_item(pending_item_id, pending_item_icon, pending_item_block_mesh, pending_item_cube_faces)
+
+func play_mine_swing(progress: float) -> void:
+	if first_person_rig != null:
+		first_person_rig.play_mine_swing(progress)
+	if body_rig != null and body_rig.has_method("play_swing"):
+		body_rig.play_swing()
+
+func play_place_swing() -> void:
+	if first_person_rig != null:
+		first_person_rig.play_place_swing()
+	if body_rig != null and body_rig.has_method("play_swing"):
+		body_rig.play_swing()
+
+func play_drop_swing() -> void:
+	if first_person_rig != null:
+		first_person_rig.play_drop_swing()
+	if body_rig != null and body_rig.has_method("play_swing"):
+		body_rig.play_swing()
+
+func play_break_finish() -> void:
+	if first_person_rig != null:
+		first_person_rig.play_break_finish()
+	if body_rig != null and body_rig.has_method("play_swing"):
+		body_rig.play_swing()
+
+func set_visuals_visible(value: bool) -> void:
+	visuals_enabled = value
+	if first_person_rig != null:
+		first_person_rig.set_hud_visible(value and camera_mode == 0)
+	if body_rig != null:
+		body_rig.visible = value and camera_mode != 0
+
+func _update_camera_transform(delta: float, target_height: float = -1.0) -> void:
+	if camera == null:
+		return
+	var height: float = target_height
+	if height < 0.0:
+		height = eye_height
+	eye_height = clamp(height, 1.15, 1.8)
+	if camera_mode == 0:
+		var target_pos: Vector3 = Vector3(0, height, 0)
+		camera.position = target_pos if delta <= 0.0 else camera.position.lerp(target_pos, delta * 12.0)
+		camera.rotation = Vector3(pitch, 0, 0)
+	else:
+		var look_target: Vector3 = global_position + Vector3(0, height + 0.06, 0)
+		var aim_direction: Vector3 = get_aim_direction()
+		var camera_direction: Vector3 = -aim_direction if camera_mode == 1 else aim_direction
+		var distance: float = _safe_third_person_distance(look_target, camera_direction)
+		var desired_global_pos: Vector3 = look_target + camera_direction * distance
+		if delta <= 0.0:
+			camera.global_position = desired_global_pos
+		else:
+			camera.global_position = camera.global_position.lerp(desired_global_pos, delta * 14.0)
+		camera.look_at(look_target, Vector3.UP)
+	if first_person_rig != null:
+		first_person_rig.visible = visuals_enabled and camera_mode == 0
+	if body_rig != null:
+		body_rig.visible = visuals_enabled and camera_mode != 0
+
+func _safe_third_person_distance(look_target: Vector3, camera_direction: Vector3) -> float:
+	var space_state: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var from: Vector3 = look_target
+	var to: Vector3 = look_target + camera_direction.normalized() * third_person_distance
+	var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(from, to)
+	query.exclude = [self]
+	var result: Dictionary = space_state.intersect_ray(query)
+	if result.is_empty():
+		return third_person_distance
+	var hit_pos: Vector3 = result.get("position", to)
+	return clamp(from.distance_to(hit_pos) - 0.25, 0.75, third_person_distance)
