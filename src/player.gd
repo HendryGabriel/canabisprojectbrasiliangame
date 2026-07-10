@@ -1,6 +1,9 @@
 extends CharacterBody3D
 class_name TrumanPlayer
 
+signal health_changed(current: float, maximum: float)
+signal died
+
 const FIRST_PERSON_RIG_SCENE: PackedScene = preload("res://scenes/first_person_view_rig.tscn")
 const PLAYER_BODY_RIG_SCENE: PackedScene = preload("res://scenes/player_body_rig.tscn")
 
@@ -10,6 +13,9 @@ const PLAYER_BODY_RIG_SCENE: PackedScene = preload("res://scenes/player_body_rig
 @export var mouse_sensitivity: float = 0.0025
 @export var block_reach: float = 4.0
 @export var third_person_distance: float = 4.0
+@export var creative_flight: bool = false
+@export var creative_flight_speed: float = 12.0
+@export var max_health: float = 20.0
 
 var gravity: float = 18.0
 var controls_enabled: bool = true
@@ -33,8 +39,11 @@ var prev_vel_y: float = 0.0
 var landing_bob: float = 0.0
 
 var collision_shape_node: CollisionShape3D = null
+var health: float = 20.0
+var dead: bool = false
 
 func _ready() -> void:
+	health = clampf(health, 0.0, max_health)
 	camera = Camera3D.new()
 	camera.name = "Camera3D"
 	camera.current = true
@@ -66,6 +75,22 @@ func _ready() -> void:
 	if pending_skin_texture != null:
 		_apply_skin_to_rigs(pending_skin_texture)
 	_apply_held_item_to_rig()
+	health_changed.emit(health, max_health)
+
+func take_damage(amount: float) -> void:
+	if dead or amount <= 0.0:
+		return
+	health = maxf(0.0, health - amount)
+	health_changed.emit(health, max_health)
+	if health <= 0.0:
+		dead = true
+		controls_enabled = false
+		died.emit()
+
+func restore_health(value: float = -1.0) -> void:
+	dead = false
+	health = max_health if value < 0.0 else clampf(value, 0.0, max_health)
+	health_changed.emit(health, max_health)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not controls_enabled:
@@ -78,6 +103,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_update_camera_transform(0.0)
 
 func _physics_process(delta: float) -> void:
+	if creative_flight:
+		_physics_process_creative(delta)
+		return
 	var main_game = get_parent()
 	if not is_on_floor():
 		velocity.y -= gravity * delta
@@ -161,7 +189,7 @@ func _physics_process(delta: float) -> void:
 	# Edge protection when crouching
 	if is_crouching and is_on_floor():
 		var next_pos: Vector3 = global_position + velocity * delta
-		if main_game != null and "blocks" in main_game:
+		if main_game != null and main_game.has_method("_is_solid_block_at"):
 			var y_check: int = int(floor(global_position.y - 0.1))
 			
 			var radius_check: float = 0.3
@@ -204,6 +232,23 @@ func _physics_process(delta: float) -> void:
 	prev_vel_y = velocity.y
 	move_and_slide()
 
+
+func _physics_process_creative(delta: float) -> void:
+	if not controls_enabled:
+		velocity = Vector3.ZERO
+		_update_camera_transform(delta, eye_height)
+		return
+	var input_dir: Vector2 = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var horizontal: Vector3 = (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+	var vertical: float = float(Input.is_key_pressed(KEY_SPACE)) - float(Input.is_key_pressed(KEY_CTRL))
+	var movement: Vector3 = horizontal + Vector3.UP * vertical
+	if movement.length_squared() > 1.0:
+		movement = movement.normalized()
+	var speed: float = creative_flight_speed * (2.5 if Input.is_key_pressed(KEY_SHIFT) else 1.0)
+	velocity = movement * speed
+	move_and_slide()
+	_update_camera_transform(delta, eye_height)
+
 func get_block_raycast() -> RayCast3D:
 	return ray
 
@@ -237,8 +282,7 @@ func set_camera_pitch(value: float) -> void:
 func set_controls_enabled(value: bool) -> void:
 	controls_enabled = value
 	if not value:
-		velocity.x = 0
-		velocity.z = 0
+		velocity = Vector3.ZERO
 
 func toggle_camera_mode() -> int:
 	camera_mode = (camera_mode + 1) % 3
@@ -286,6 +330,9 @@ func play_place_swing() -> void:
 		first_person_rig.play_place_swing()
 	if body_rig != null and body_rig.has_method("play_swing"):
 		body_rig.play_swing()
+
+func play_attack_swing() -> void:
+	play_place_swing()
 
 func play_drop_swing() -> void:
 	if first_person_rig != null:

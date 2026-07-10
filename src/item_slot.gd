@@ -18,6 +18,14 @@ var flat_icon: TextureRect
 var count_label: Label
 var viewport_container: SubViewportContainer
 var block_viewport: SubViewport
+var preview_root: Node3D
+var preview_mesh_instance: MeshInstance3D
+var preview_scene_signature: String = ""
+
+## PackedStringArray constructors are runtime expressions in Godot 4.
+const CUBE_FACE_NAMES: Array = [
+	"north", "south", "east", "west", "top", "bottom"
+]
 
 func configure(
 	p_controller: Node,
@@ -32,6 +40,7 @@ func configure(
 	p_size: Vector2 = Vector2(72, 54),
 	p_interactive: bool = true
 ) -> void:
+	var cube_preview_changed: bool = _cube_preview_signature_for(p_cube_faces, p_item_icon) != preview_scene_signature
 	controller = p_controller
 	slot_type = p_slot_type
 	slot_index = p_slot_index
@@ -47,7 +56,7 @@ func configure(
 	focus_mode = Control.FOCUS_NONE
 	tooltip_text = ""
 	_ensure_children()
-	_update_visual()
+	_update_visual(cube_preview_changed)
 
 func set_selected(value: bool) -> void:
 	selected = value
@@ -108,7 +117,7 @@ func _ensure_children() -> void:
 		block_viewport.own_world_3d = true
 		block_viewport.transparent_bg = true
 		block_viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
-		block_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		block_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		block_viewport.msaa_3d = Viewport.MSAA_DISABLED
 		block_viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 		viewport_container.add_child(block_viewport)
@@ -130,11 +139,10 @@ func _ensure_children() -> void:
 		count_label.add_theme_constant_override("shadow_offset_y", 1)
 		add_child(count_label)
 
-func _update_visual() -> void:
+func _update_visual(force_cube_preview_refresh: bool = false) -> void:
 	if not is_node_ready():
 		return
 	_ensure_children()
-	_clear_block_viewport()
 	if item_id == "" or item_count <= 0:
 		flat_icon.visible = false
 		viewport_container.visible = false
@@ -145,7 +153,8 @@ func _update_visual() -> void:
 	if cube_faces.size() > 0:
 		flat_icon.visible = false
 		viewport_container.visible = true
-		_build_block_viewport()
+		if _update_cube_preview_if_needed():
+			force_cube_preview_refresh = true
 	else:
 		viewport_container.visible = false
 		flat_icon.visible = true
@@ -153,6 +162,8 @@ func _update_visual() -> void:
 
 	count_label.text = str(item_count) if item_count > 1 else ""
 	_position_children()
+	if force_cube_preview_refresh:
+		request_preview_update()
 	queue_redraw()
 
 func _position_children() -> void:
@@ -169,22 +180,36 @@ func _position_children() -> void:
 	viewport_container.position = icon_position
 	viewport_container.size = icon_size
 	if block_viewport != null:
-		block_viewport.size = Vector2i(max(1, int(icon_size.x)), max(1, int(icon_size.y)))
+		var viewport_size: Vector2i = Vector2i(max(1, int(icon_size.x)), max(1, int(icon_size.y)))
+		if block_viewport.size != viewport_size:
+			block_viewport.size = viewport_size
+			if viewport_container.visible:
+				request_preview_update()
 	count_label.position = Vector2(0, slot_size.y - 17.0)
 	count_label.size = Vector2(slot_size.x - 4.0, 16.0)
 
-func _clear_block_viewport() -> void:
-	if block_viewport == null:
+func request_preview_update() -> void:
+	if not is_node_ready() or block_viewport == null or viewport_container == null:
 		return
-	for child in block_viewport.get_children():
-		block_viewport.remove_child(child)
-		child.queue_free()
+	if not viewport_container.visible or cube_faces.is_empty():
+		return
+	block_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
-func _build_block_viewport() -> void:
-	_position_children()
+func _update_cube_preview_if_needed() -> bool:
+	var signature: String = _cube_preview_signature_for(cube_faces, item_icon)
+	_ensure_block_preview_scene()
+	if signature == preview_scene_signature and preview_mesh_instance.mesh != null:
+		return false
+	preview_mesh_instance.mesh = _build_cube_mesh()
+	preview_scene_signature = signature
+	return true
 
-	var root: Node3D = Node3D.new()
-	block_viewport.add_child(root)
+func _ensure_block_preview_scene() -> void:
+	if preview_root != null and is_instance_valid(preview_root):
+		return
+
+	preview_root = Node3D.new()
+	block_viewport.add_child(preview_root)
 
 	var environment_node: WorldEnvironment = WorldEnvironment.new()
 	var environment: Environment = Environment.new()
@@ -199,11 +224,10 @@ func _build_block_viewport() -> void:
 	var light: DirectionalLight3D = DirectionalLight3D.new()
 	light.rotation_degrees = Vector3(-45, -35, 0)
 	light.light_energy = 1.35
-	root.add_child(light)
+	preview_root.add_child(light)
 
-	var mesh_instance: MeshInstance3D = MeshInstance3D.new()
-	mesh_instance.mesh = _build_cube_mesh()
-	root.add_child(mesh_instance)
+	preview_mesh_instance = MeshInstance3D.new()
+	preview_root.add_child(preview_mesh_instance)
 
 	var camera: Camera3D = Camera3D.new()
 	block_viewport.add_child(camera)
@@ -211,6 +235,15 @@ func _build_block_viewport() -> void:
 	camera.look_at(Vector3.ZERO, Vector3.UP)
 	camera.fov = 34.0
 	camera.current = true
+
+func _cube_preview_signature_for(p_cube_faces: Dictionary, p_item_icon: Texture2D) -> String:
+	if p_cube_faces.is_empty():
+		return ""
+	var face_signatures: PackedStringArray = PackedStringArray()
+	for face_name in CUBE_FACE_NAMES:
+		var texture: Texture2D = _texture_for_face_data(face_name, p_cube_faces, p_item_icon)
+		face_signatures.append(str(texture.get_instance_id()) if texture != null else "0")
+	return "|".join(face_signatures)
 
 func _build_cube_mesh() -> ArrayMesh:
 	var mesh: ArrayMesh = ArrayMesh.new()
@@ -288,21 +321,24 @@ func _material_for_face(face_name: String) -> StandardMaterial3D:
 	return mat
 
 func _texture_for_face(face_name: String) -> Texture2D:
-	var raw_texture: Variant = cube_faces.get(face_name, null)
+	return _texture_for_face_data(face_name, cube_faces, item_icon)
+
+func _texture_for_face_data(face_name: String, p_cube_faces: Dictionary, p_item_icon: Texture2D) -> Texture2D:
+	var raw_texture: Variant = p_cube_faces.get(face_name, null)
 	if raw_texture is Texture2D:
 		return raw_texture as Texture2D
 	if face_name == "east" or face_name == "west" or face_name == "south":
-		raw_texture = cube_faces.get("side", null)
+		raw_texture = p_cube_faces.get("side", null)
 		if raw_texture is Texture2D:
 			return raw_texture as Texture2D
 	if face_name == "north":
-		raw_texture = cube_faces.get("front", null)
+		raw_texture = p_cube_faces.get("front", null)
 		if raw_texture is Texture2D:
 			return raw_texture as Texture2D
-	raw_texture = cube_faces.get("top", null)
+	raw_texture = p_cube_faces.get("top", null)
 	if raw_texture is Texture2D:
 		return raw_texture as Texture2D
-	raw_texture = cube_faces.get("front", null)
+	raw_texture = p_cube_faces.get("front", null)
 	if raw_texture is Texture2D:
 		return raw_texture as Texture2D
-	return item_icon
+	return p_item_icon

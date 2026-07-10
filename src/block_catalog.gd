@@ -158,6 +158,18 @@ static func blocks() -> Dictionary:
 			"place_item": "chest",
 			"interact": "chest"
 		},
+		"torch": {
+			"name": "Tocha",
+			"drop": "torch",
+			"color": Color(1.0, 0.72, 0.22),
+			"texture": "res://texture/minecraft/textures/block/torch.png",
+			"icon": "res://texture/minecraft/textures/item/torch_inventory.png",
+			"place_item": "torch",
+			"interact": "",
+			"transparent": true,
+			"solid": false,
+			"plant": true
+		},
 		"short_grass": {
 			"name": "Grama Curta",
 			"drop": "short_grass",
@@ -252,6 +264,7 @@ static func items() -> Dictionary:
 		"planks": {"name": "Tabuas", "place_block": "planks", "tool": "", "icon": "res://texture/used/oak_planks.png"},
 		"crafting_table": {"name": "Bancada 3x3", "place_block": "crafting_table", "tool": "", "icon": "res://texture/used/crafting_table_top.png"},
 		"chest": {"name": "Bau", "place_block": "chest", "tool": "", "icon": "res://texture/used/barrel_top.png"},
+		"torch": {"name": "Tocha", "place_block": "torch", "tool": "", "icon": "res://texture/minecraft/textures/item/torch_inventory.png"},
 		"copper": {"name": "Cobre", "place_block": "", "tool": "", "icon": "res://texture/used/raw_copper.png"},
 		"iron": {"name": "Ferro", "place_block": "", "tool": "", "icon": "res://texture/used/raw_iron.png"},
 		"coal": {"name": "Carvao", "place_block": "", "tool": "", "icon": "res://texture/used/coal.png"},
@@ -280,6 +293,21 @@ static func items() -> Dictionary:
 		"cornflower": {"name": "Ciano", "place_block": "cornflower", "tool": "", "icon": "res://texture/used/cornflower.png"},
 		"oxeye_daisy": {"name": "Margarida", "place_block": "oxeye_daisy", "tool": "", "icon": "res://texture/used/oxeye_daisy.png"}
 	}
+
+static func attack_damage(item_id: String) -> float:
+	if item_id.ends_with("_sword"):
+		return _tier_damage(item_id, 5.0, 10.0, 15.0)
+	var tool: String = str((items().get(item_id, {}) as Dictionary).get("tool", ""))
+	if tool in ["pickaxe", "axe", "shovel", "hoe"]:
+		return _tier_damage(item_id, 2.5, 5.0, 7.5)
+	return 1.0
+
+static func _tier_damage(item_id: String, wooden: float, stone: float, iron: float) -> float:
+	if item_id.begins_with("wooden_"):
+		return wooden
+	if item_id.begins_with("stone_"):
+		return stone
+	return iron
 
 static func recipes() -> Array:
 	return [
@@ -310,6 +338,12 @@ static func recipes() -> Array:
 			],
 			"output": "chest",
 			"count": 1
+		},
+		{
+			"name": "Tocha x4",
+			"shape": [["coal"], ["stick"]],
+			"output": "torch",
+			"count": 4
 		},
 		{
 			"name": "Picareta de Manita",

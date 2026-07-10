@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TRUMANCRAFT — Editor de Bioma 2D</title>
+  <style>
+    :root { color-scheme: dark; --bg:#11151a; --panel:#1c232b; --line:#394653; --text:#eef5fa; --muted:#9eacb8; --accent:#50c9ff; }
+    * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--text); font:14px system-ui,sans-serif; overflow:hidden }
+    header { height:54px; display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--line); background:#151b21 }
+    h1 { font-size:17px; margin:0 18px 0 0 } button,.button,select,input,textarea { color:var(--text); background:#26313b; border:1px solid #465563; border-radius:5px; padding:7px 9px }
+    button,.button { cursor:pointer } button:hover,.button:hover { border-color:var(--accent) } input[type=file] { display:none }
+    main { height:calc(100vh - 54px); display:grid; grid-template-columns:290px 1fr 320px }
+    aside { overflow:auto; padding:12px; background:var(--panel); border-right:1px solid var(--line) } aside.right { border-right:0; border-left:1px solid var(--line) }
+    .group { padding-bottom:13px; margin-bottom:13px; border-bottom:1px solid var(--line) } .group h2 { font-size:13px; margin:0 0 8px; color:var(--accent); text-transform:uppercase; letter-spacing:.08em }
+    label { display:block; color:var(--muted); margin:7px 0 3px } select,input[type=range],input[type=number],input[type=text] { width:100% }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:7px } .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px }
+    #stage { position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#0c1014 }
+    canvas { image-rendering:pixelated; box-shadow:0 0 0 1px #546474,0 18px 60px #000a; cursor:crosshair; max-width:calc(100% - 28px); max-height:calc(100% - 28px) }
+    #coords { position:absolute; left:14px; bottom:10px; color:#d8e6ef; background:#10171dcc; padding:5px 8px; border-radius:4px }
+    textarea { width:100%; min-height:310px; resize:vertical; font:12px ui-monospace,monospace; white-space:pre }
+    .status { min-height:42px; padding:8px; background:#12181e; border:1px solid var(--line); border-radius:5px; color:var(--muted) }
+    .status.error { color:#ff8f98; border-color:#853942 } .status.ok { color:#8fe0a6; border-color:#347348 }
+    .hint { color:var(--muted); font-size:12px; line-height:1.45 } .selected { outline:2px solid var(--accent) }
+  </style>
+</head>
+<body>
+<header>
+  <h1>TRUMANCRAFT · Editor de Bioma 2D</h1>
+  <button id="newTile">Novo tile plano</button>
+  <label class="button">Abrir .tterrain.json<input id="openJson" type="file" accept=".json,.tterrain.json"></label>
+  <button id="saveJson">Exportar tile</button>
+  <label class="button">Importar heightmap PNG<input id="openPng" type="file" accept="image/png"></label>
+  <button id="savePng">Exportar heightmap PNG</button>
+</header>
+<main>
+  <aside>
+    <div class="group"><h2>Visualização</h2>
+      <label>Camada</label><select id="view"><option value="height">Altura</option><option value="profile">Perfis</option><option value="cave">Densidade</option><option value="zones">Zonas</option><option value="networks">Redes completas</option><option value="slice">Corte por Y</option></select>
+      <label>Y selecionado: <b id="sliceValue">0</b></label><input id="slice" type="range" min="-64" max="96" value="0">
+    </div>
+    <div class="group"><h2>Pincel de terreno</h2>
+      <label>Ferramenta</label><select id="tool"><option value="raise">Elevar</option><option value="lower">Baixar</option><option value="smooth">Suavizar</option><option value="flatten">Achatar</option><option value="profile">Pintar perfil</option><option value="cave">Densidade</option><option value="protect">Proteção</option></select>
+      <div class="row"><div><label>Raio</label><input id="brushRadius" type="number" min="1" max="12" value="4"></div><div><label>Força</label><input id="strength" type="number" min="1" max="8" value="2"></div></div>
+      <label>Perfil</label><select id="profile"><option value="0">Grama</option><option value="1">Rocha</option><option value="2">Terra</option><option value="3">Pradaria</option></select>
+      <label>Densidade 0–255</label><input id="density" type="number" min="0" max="255" value="82">
+      <p class="hint">Clique e arraste no mapa. Shift remove proteção.</p>
+    </div>
+    <div class="group"><h2>Rede de cavernas</h2>
+      <label>Rede</label><select id="network"></select>
+      <button id="addNetwork">Nova rede</button>
+      <label>Ferramenta</label><select id="caveTool"><option value="select">Selecionar/mover</option><option value="route">Adicionar rota</option><option value="entrance">Adicionar entrada</option><option value="chamber">Adicionar câmara</option><option value="connect">Conectar nós</option><option value="delete">Excluir nó</option><option value="carve">Escavar override</option><option value="fill">Preencher override</option></select>
+      <div class="row"><div><label>Y do nó</label><input id="nodeY" type="number" min="-64" max="96" value="-8"></div><div><label>Raio</label><input id="nodeRadius" type="number" min="2" max="9" value="4"></div></div>
+      <button id="applyNode">Aplicar Y/raio ao nó</button>
+      <p id="nodeInfo" class="hint">Nenhum nó selecionado.</p>
+    </div>
+  </aside>
+  <section id="stage"><canvas id="map" width="700" height="700"></canvas><div id="coords">X 0 · Z 0 · Y 0</div></section>
+  <aside class="right">
+    <div class="group"><h2>JSON textual</h2><textarea id="jsonText" spellcheck="false"></textarea><div class="row"><button id="applyJson">Aplicar JSON</button><button id="formatJson">Formatar</button></div></div>
+    <div id="status" class="status">Crie um tile ou abra um arquivo exportado pelo Godot.</div>
+    <p class="hint">PNG: preto corresponde a Y=-32 e branco a Y=96. Importar uma imagem altera somente as alturas; redes, zonas e estruturas são preservadas.</p>
+  </aside>
+</main>
+<script>
+'use strict';
+const SIZE=100, CELLS=10000, MIN_Y=-32, MAX_Y=96, canvas=document.querySelector('#map'), ctx=canvas.getContext('2d');
+const $=s=>document.querySelector(s); let tile=null, painting=false, selectedNode='', connectFrom='';
+function flatTile(){ const h=new Array(CELLS).fill(12), p=new Array(CELLS).fill(0), c=new Array(CELLS).fill(82), z=new Array(CELLS).fill(9); for(let zz=41;zz<60;zz++)for(let x=41;x<60;x++)if(Math.hypot(x-50,zz-50)<=9)z[zz*100+x]=2; return {format:'trumancraft_terrain_tile',version:2,tile_coord:[0,0],tile_size:100,min_surface_y:-32,max_surface_y:96,draft_seed:1235571,heights:h,surface_profiles:p,cave_density:c,zone_flags:z,cave_entrances:[],cave_networks:[],cave_overrides:{carve:[],fill:[]},anchors:[]}; }
+function runs(values){let out=[],v=values[0],n=1;for(let i=1;i<values.length;i++){if(values[i]===v)n++;else{out.push([v,n]);v=values[i];n=1}}out.push([v,n]);return out}
+function unrle(raw){let out=[];for(const r of raw||[]){if(!Array.isArray(r)||r.length!==2||r[1]<1)throw Error('RLE inválido');for(let i=0;i<r[1];i++)out.push(Number(r[0]))}if(out.length!==CELLS)throw Error('RLE precisa produzir 10000 células');return out}
+function external(){return {format:'trumancraft_terrain_tile',version:2,tile_coord:tile.tile_coord,tile_size:100,min_surface_y:-32,max_surface_y:96,draft_seed:tile.draft_seed||0,heights_rle:runs(tile.heights),surface_profiles_rle:runs(tile.surface_profiles),cave_density_rle:runs(tile.cave_density),zone_flags_rle:runs(tile.zone_flags),cave_entrances:tile.cave_entrances||[],cave_networks:tile.cave_networks||[],cave_overrides:tile.cave_overrides||{carve:[],fill:[]},anchors:tile.anchors||[]}}
+function internal(data){if(data.format!=='trumancraft_terrain_tile'||![1,2].includes(Number(data.version))||Number(data.tile_size)!==100)throw Error('Formato de tile incompatível'); if(data.draft_only)throw Error('O HTML precisa de um tile completo. Exporte o tile pelo editor Godot primeiro.'); return {...data,version:2,heights:unrle(data.heights_rle),surface_profiles:unrle(data.surface_profiles_rle),cave_density:unrle(data.cave_density_rle),zone_flags:unrle(data.zone_flags_rle),cave_networks:data.cave_networks||[],cave_overrides:data.cave_overrides||{carve:[],fill:[]}}}
+function validate(){if(!tile)throw Error('Nenhum tile carregado');for(const k of ['heights','surface_profiles','cave_density','zone_flags'])if(!Array.isArray(tile[k])||tile[k].length!==CELLS)throw Error(`${k} deve conter 10000 células`);for(const net of tile.cave_networks){if(!net.id||!Array.isArray(net.nodes)||!Array.isArray(net.edges))throw Error('Rede inválida');const ids=new Set;for(const n of net.nodes){if(ids.has(n.id))throw Error(`Nó duplicado: ${n.id}`);ids.add(n.id);const r=+n.radius;if(n.type==='entrance'?(r<2||r>7):(r<3||r>9))throw Error(`Raio inválido em ${n.id}`);if(n.pos[0]-r<0||n.pos[0]+r>=100||n.pos[2]-r<0||n.pos[2]+r>=100||n.pos[1]-r<=-65)throw Error(`Nó fora dos limites: ${n.id}`)}for(const e of net.edges){const a=Array.isArray(e)?e[0]:e.from,b=Array.isArray(e)?e[1]:e.to;if(!ids.has(a)||!ids.has(b))throw Error(`Aresta órfã em ${net.id}`)}}return true}
+function status(text,error=false){const e=$('#status');e.textContent=text;e.className='status '+(error?'error':'ok')}
+function syncText(){if(tile)$('#jsonText').value=JSON.stringify(external(),null,2)}
+function networks(){const s=$('#network'),old=s.value;s.innerHTML='';tile.cave_networks.forEach((n,i)=>s.add(new Option(n.name||n.id,String(i))));if([...s.options].some(o=>o.value===old))s.value=old;selectedNode='';nodeInfo()}
+function net(){return tile.cave_networks[Number($('#network').value)||0]}
+function nodeById(id){return net()?.nodes.find(n=>n.id===id)}
+function nodeInfo(){const n=nodeById(selectedNode);$('#nodeInfo').textContent=n?`${n.id} · ${n.type} · (${n.pos.join(', ')}) · raio ${n.radius}`:'Nenhum nó selecionado.';if(n){$('#nodeY').value=n.pos[1];$('#nodeRadius').value=n.radius}}
+function depthColor(y){const t=Math.max(0,Math.min(1,(16-y)/80)),a=[69,217,255],b=[255,77,125];return `rgb(${a.map((v,i)=>Math.round(v+(b[i]-v)*t)).join(',')})`}
+function draw(){if(!tile)return;const view=$('#view').value,img=ctx.createImageData(SIZE,SIZE);for(let i=0;i<CELLS;i++){let c;if(view==='height'){const t=(tile.heights[i]-MIN_Y)/(MAX_Y-MIN_Y);c=[30+180*t,70+125*t,25+105*t]}else if(view==='profile')c=[[95,174,79],[118,121,126],[121,81,47],[167,189,76]][tile.surface_profiles[i]||0];else if(view==='cave'){const t=tile.cave_density[i]/255;c=[20+150*t,18,40+190*t]}else if(view==='zones'){const f=tile.zone_flags[i];c=f&2?[197,62,69]:f&4?[36,122,55]:f&1?[45,101,158]:[52,56,61]}else c=[18,27,29];img.data.set([...c.map(Math.round),255],i*4)}const off=document.createElement('canvas');off.width=off.height=100;off.getContext('2d').putImageData(img,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(off,0,0,canvas.width,canvas.height);if(['networks','slice'].includes(view))drawNetworks(view==='slice');}
+function drawNetworks(slice){const sy=+$('#slice').value,scale=canvas.width/100;ctx.lineCap='round';tile.cave_networks.forEach((network,ni)=>{const nodes=Object.fromEntries(network.nodes.map(n=>[n.id,n]));for(const e of network.edges){const ids=Array.isArray(e)?e:[e.from,e.to],a=nodes[ids[0]],b=nodes[ids[1]];if(!a||!b)continue;const r=(+a.radius + +b.radius)/2;if(slice&&(sy<Math.min(a.pos[1],b.pos[1])-r||sy>Math.max(a.pos[1],b.pos[1])+r))continue;ctx.strokeStyle=depthColor((a.pos[1]+b.pos[1])/2);ctx.globalAlpha=ni===Number($('#network').value)?.95:.4;ctx.lineWidth=Math.max(3,r*scale*.35);ctx.beginPath();ctx.moveTo((a.pos[0]+.5)*scale,(a.pos[2]+.5)*scale);ctx.lineTo((b.pos[0]+.5)*scale,(b.pos[2]+.5)*scale);ctx.stroke()}for(const n of network.nodes){if(slice&&Math.abs(n.pos[1]-sy)>n.radius)continue;ctx.globalAlpha=1;ctx.fillStyle=n.id===selectedNode?'#ffe45b':n.type==='entrance'?'#ff9638':n.type==='chamber'?'#b96bf0':depthColor(n.pos[1]);ctx.beginPath();ctx.arc((n.pos[0]+.5)*scale,(n.pos[2]+.5)*scale,Math.max(5,n.radius*scale*.3),0,Math.PI*2);ctx.fill()}});ctx.globalAlpha=1}
+function cell(ev){const r=canvas.getBoundingClientRect();return [Math.max(0,Math.min(99,Math.floor((ev.clientX-r.left)/r.width*100))),Math.max(0,Math.min(99,Math.floor((ev.clientY-r.top)/r.height*100)))]}
+function nearest(x,z){let best=null,d=2.2;tile.cave_networks.forEach((n,ni)=>n.nodes.forEach(v=>{const nd=Math.hypot(v.pos[0]-x,v.pos[2]-z);if(nd<d){d=nd;best=[ni,v]}}));return best}
+function paint(x,z,ev){const view=$('#view').value;if(['networks','slice'].includes(view)){caveEdit(x,z);return}const tool=$('#tool').value,r=+$('#brushRadius').value,s=+$('#strength').value,base=tile.heights[z*100+x];for(let zz=z-r;zz<=z+r;zz++)for(let xx=x-r;xx<=x+r;xx++){if(xx<0||xx>99||zz<0||zz>99)continue;const d=Math.hypot(xx-x,zz-z);if(d>r)continue;const i=zz*100+xx,f=Math.max(.08,1-d/(r+1));if(tool==='raise')tile.heights[i]=Math.min(MAX_Y,tile.heights[i]+Math.max(1,Math.round(s*f)));else if(tool==='lower')tile.heights[i]=Math.max(MIN_Y,tile.heights[i]-Math.max(1,Math.round(s*f)));else if(tool==='flatten')tile.heights[i]=Math.round(tile.heights[i]+(base-tile.heights[i])*f);else if(tool==='smooth'){let sum=0,n=0;for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const q=(zz+dz)*100+xx+dx;if(xx+dx>=0&&xx+dx<100&&zz+dz>=0&&zz+dz<100){sum+=tile.heights[q];n++}}tile.heights[i]=Math.round(tile.heights[i]+(sum/n-tile.heights[i])*f)}else if(tool==='profile')tile.surface_profiles[i]=+$('#profile').value;else if(tool==='cave')tile.cave_density[i]=+$('#density').value;else if(tool==='protect')tile.zone_flags[i]=ev.shiftKey?tile.zone_flags[i]&~2:tile.zone_flags[i]|2}draw()}
+function caveEdit(x,z){const tool=$('#caveTool').value,n=net();if(!n&&tool!=='carve'&&tool!=='fill')return;const hit=nearest(x,z);if(hit&&hit[0]===Number($('#network').value)){const v=hit[1];if(tool==='delete'){n.nodes=n.nodes.filter(q=>q.id!==v.id);n.edges=n.edges.filter(e=>{const a=Array.isArray(e)?e[0]:e.from,b=Array.isArray(e)?e[1]:e.to;return a!==v.id&&b!==v.id});selectedNode=''}else if(tool==='connect'){if(!connectFrom){connectFrom=v.id;status('Escolha o segundo nó.')}else if(connectFrom!==v.id){n.edges.push([connectFrom,v.id]);connectFrom='';status('Nós conectados.')}}else{selectedNode=v.id}nodeInfo();draw();syncText();return}if(tool==='select'&&selectedNode){const v=nodeById(selectedNode);v.pos[0]=x;v.pos[2]=z}else if(['route','entrance','chamber'].includes(tool)){let k=0,id;do{id=`n${k++}`}while(n.nodes.some(v=>v.id===id));const y=tool==='entrance'?tile.heights[z*100+x]+1:+$('#nodeY').value,r=tool==='entrance'?Math.max(2,Math.min(7,+$('#nodeRadius').value)):Math.max(3,Math.min(9,+$('#nodeRadius').value));n.nodes.push({id,pos:[x,y,z],radius:r,type:tool});selectedNode=id}else if(['carve','fill'].includes(tool)){const key=tool,other=tool==='carve'?'fill':'carve',row=[x,+$('#slice').value,z],same=(a,b)=>a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2];if(!tile.cave_overrides[key].some(v=>same(v,row)))tile.cave_overrides[key].push(row);tile.cave_overrides[other]=tile.cave_overrides[other].filter(v=>!same(v,row))}nodeInfo();draw();syncText()}
+canvas.addEventListener('mousedown',e=>{if(e.button===0){painting=true;const [x,z]=cell(e);paint(x,z,e)}});canvas.addEventListener('mousemove',e=>{const [x,z]=cell(e);$('#coords').textContent=`X ${x} · Z ${z} · superfície Y ${tile?tile.heights[z*100+x]:0} · corte Y ${$('#slice').value}`;if(painting)paint(x,z,e)});addEventListener('mouseup',()=>{painting=false;syncText()});
+$('#newTile').onclick=()=>{tile=flatTile();networks();syncText();draw();status('Novo tile plano criado.')};
+$('#view').onchange=draw;$('#slice').oninput=()=>{$('#sliceValue').textContent=$('#slice').value;draw()};$('#network').onchange=()=>{selectedNode='';connectFrom='';nodeInfo();draw()};
+$('#addNetwork').onclick=()=>{const i=tile.cave_networks.length+1;tile.cave_networks.push({id:`network_${i}`,name:`Rede ${i}`,nodes:[],edges:[]});networks();$('#network').value=String(i-1);syncText();draw()};
+$('#applyNode').onclick=()=>{const n=nodeById(selectedNode);if(!n)return status('Selecione um nó.',true);n.pos[1]=+$('#nodeY').value;n.radius=n.type==='entrance'?Math.max(2,Math.min(7,+$('#nodeRadius').value)):Math.max(3,Math.min(9,+$('#nodeRadius').value));syncText();draw();nodeInfo()};
+$('#openJson').onchange=async e=>{try{tile=internal(JSON.parse(await e.target.files[0].text()));validate();networks();syncText();draw();status('Tile carregado e migrado para V2.')}catch(err){status(err.message,true)}};
+$('#applyJson').onclick=()=>{try{tile=internal(JSON.parse($('#jsonText').value));validate();networks();draw();status('JSON aplicado.')}catch(err){status(err.message,true)}};$('#formatJson').onclick=()=>{try{$('#jsonText').value=JSON.stringify(JSON.parse($('#jsonText').value),null,2)}catch(err){status(`JSON: ${err.message}`,true)}};
+function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+$('#saveJson').onclick=()=>{try{validate();download(new Blob([JSON.stringify(external(),null,2)],{type:'application/json'}),'biome_1.tterrain.json');status('Tile V2 exportado.')}catch(err){status(err.message,true)}};
+$('#savePng').onclick=()=>{const c=document.createElement('canvas');c.width=c.height=100;const x=c.getContext('2d'),im=x.createImageData(100,100);tile.heights.forEach((h,i)=>{const v=Math.round((h-MIN_Y)/(MAX_Y-MIN_Y)*255);im.data.set([v,v,v,255],i*4)});x.putImageData(im,0,0);c.toBlob(b=>download(b,'biome_heightmap.png'),'image/png')};
+$('#openPng').onchange=e=>{const im=new Image;im.onload=()=>{const c=document.createElement('canvas');c.width=c.height=100;const x=c.getContext('2d');x.drawImage(im,0,0,100,100);const d=x.getImageData(0,0,100,100).data;for(let i=0;i<CELLS;i++){const gray=(d[i*4]+d[i*4+1]+d[i*4+2])/3;tile.heights[i]=Math.round(MIN_Y+gray/255*(MAX_Y-MIN_Y))}draw();syncText();status('Heightmap importado; demais dados foram preservados.')};im.src=URL.createObjectURL(e.target.files[0])};
+tile=flatTile();networks();syncText();draw();status('Editor pronto. Abra um tile completo ou comece pelo tile plano.');
+</script>
+</body></html>

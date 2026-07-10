@@ -1,46 +1,51 @@
 extends Node3D
 
+const VoxelWorldScript = preload("res://src/voxel_world.gd")
+const VoxelSectionSystemScript = preload("res://src/voxel_section_system.gd")
+const PerformanceProfileScript = preload("res://src/performance_profile.gd")
+const VoxelTextureArrayScript = preload("res://src/voxel_texture_array.gd")
+const EditResultScript = preload("res://src/edit_result.gd")
+const TerrainTileDataScript = preload("res://src/terrain_tile_data.gd")
+const TerrainGeneratorScript = preload("res://src/terrain_generator.gd")
+const StructureRegistryScript = preload("res://src/structure_registry.gd")
+const VoxelDependencyResolverScript = preload("res://src/voxel_dependency_resolver.gd")
+const VoxelDebrisSystemScript = preload("res://src/voxel_debris_system.gd")
+const EntityManagerScript = preload("res://src/entity_manager.gd")
+const LightRegistryScript = preload("res://src/light_registry.gd")
+const ThumbstoneScript = preload("res://src/thumbstone.gd")
+
 const BIOME_SIZE: int = 100
-const MAP_SIZE: int = 200
-const WORLD_DEPTH: int = 64
 const SURFACE_BASE_Y: int = 0
-const SURFACE_MIN_Y: int = -2
-const SURFACE_MAX_Y: int = 9
 const BEDROCK_Y: int = -65
 const WORLD_SEED: int = 1235571
 const BIOME_MIN_X: int = 0
 const BIOME_MAX_X: int = BIOME_SIZE - 1
 const BIOME_MIN_Z: int = 0
 const BIOME_MAX_Z: int = BIOME_SIZE - 1
-const WORLD_WALL_HEIGHT: float = 180.0
-const BLOCK_NEIGHBORS: Array[Vector3i] = [
-	Vector3i(1, 0, 0),
-	Vector3i(-1, 0, 0),
-	Vector3i(0, 1, 0),
-	Vector3i(0, -1, 0),
-	Vector3i(0, 0, 1),
-	Vector3i(0, 0, -1)
-]
+## Covers the complete -65..126 voxel volume so the four locked regions cannot
+## be bypassed above the former 64-block terrain depth.
+const WORLD_WALL_HEIGHT: float = 192.0
 const INVENTORY_SLOT_COUNT: int = 27
 const CHEST_SLOT_COUNT: int = 18
+const CHEST_METADATA_KEY: String = "chest_inventory"
 const MANA_MAX: float = 100.0
 const MANA_REGEN_PER_SECOND: float = 5.0
 const MANITA_PICKAXE_MANA_COST: float = 5.0
 const HOTBAR_SLOT_COUNT: int = 9
-const SAVE_PATH: String = "user://savegame.json"
+const SAVE_PATH: String = "user://savegame_v4.json"
+const V3_SAVE_PATH: String = "user://savegame_v3.json"
+const V2_SAVE_PATH: String = "user://savegame_v2.json"
+const LEGACY_SAVE_PATH: String = "user://savegame.json"
 const SETTINGS_PATH: String = "user://settings.cfg"
-const CHUNK_SIZE: int = 8
-const COLLISION_RADIUS: int = 12
+const DEFAULT_TERRAIN_TILE_PATH: String = "res://data/terrain/biome_1.tterrain.json"
+const DEFAULT_STRUCTURE_REGISTRY_PATH: String = "res://data/structures/registry.json"
 const SHADOW_OPACITY: float = 0.4
 const LEAF_PARTICLE_MAX: int = 28
 const LEAF_PARTICLE_SPAWN_INTERVAL: float = 0.34
 const LEAF_PARTICLE_SEARCH_RADIUS: int = 10
+const BENCHMARK_DURATION_SECONDS: float = 30.0
+const PLAYER_MAX_HEALTH: float = 20.0
 
-var chunk_nodes: Dictionary = {} # Vector2i -> Node3D
-var blocks_in_chunk: Dictionary = {} # Vector2i -> (Vector3i -> String)
-var dirty_chunk_queue: Array = []
-var dirty_chunk_keys: Dictionary = {}
-var last_collision_update_pos: Vector3i = Vector3i(-999, -999, -999)
 var breaking_pos: Vector3i = Vector3i(-999, -999, -999)
 var breaking_progress: float = 0.0
 var breaking_overlay: MeshInstance3D = null
@@ -49,17 +54,15 @@ var target_outline: MeshInstance3D = null
 var target_outline_pos: Vector3i = Vector3i(-999, -999, -999)
 var dropped_items: Array = []
 var is_loading_world: bool = false
-var chunks_to_mesh: Array = []
-var total_chunks_to_mesh: int = 0
-var meshed_chunks_count: int = 0
-var tracking_on_load_finish: bool = false
 var continue_on_load_finish: bool = false
 var loaded_game_data: Dictionary = {}
+var last_load_error: String = ""
 var place_cooldown: float = 0.0
 var leaf_particles: Array = []
 var leaf_particle_spawn_timer: float = 0.0
 var leaf_particle_texture: Texture2D = null
 var leaf_particle_mesh: QuadMesh = null
+var leaf_particle_limit: int = LEAF_PARTICLE_MAX
 
 var time_of_day: float = 8.0
 var day_count: int = 1
@@ -81,12 +84,7 @@ var materials: Dictionary = {}
 var block_item_meshes: Dictionary = {}
 var item_icons: Dictionary = {}
 var item_icon_faces: Dictionary = {}
-var blocks: Dictionary = {}
-var block_nodes: Dictionary = {}
 var surface_heights: Dictionary = {}
-var chest_inventories: Dictionary = {}
-var changed_blocks: Dictionary = {}
-var removed_blocks: Dictionary = {}
 var inventory_slots: Array = []
 var craft_slots: Array = []
 var craft_size: int = 2
@@ -104,7 +102,6 @@ var left_drag_targets: Array = []
 var left_drag_keys: Dictionary = {}
 var right_drag_active: bool = false
 var right_drag_keys: Dictionary = {}
-var tracking_world_changes: bool = false
 var game_started: bool = false
 var fullscreen_enabled: bool = false
 var shadows_enabled: bool = true
@@ -113,6 +110,32 @@ var voxel_ao_enabled: bool = true
 var options_origin: String = "main"
 var player_skin_path: String = ""
 var saved_camera_mode: int = 0
+var performance_preset: int = PerformanceProfileScript.Preset.HIGH
+var performance_profile = null
+var voxel_world = null
+var voxel_sections = null
+var voxel_texture_array = null
+var voxel_debris = null
+var active_terrain_tile = null
+var active_structure_registry = null
+var active_terrain_hash: String = ""
+var active_registry_hash: String = ""
+var last_generation_report = null
+var cached_target = null # VoxelHit from VoxelWorld.raycast_hit().
+## One DDA result is authoritative for all interaction visuals and edits until
+## the next physics tick. This keeps plants targetable without physics bodies.
+var cached_target_physics_frame: int = -1
+var hotbar_slots: Array[ItemSlot] = []
+var last_status_text: String = ""
+var benchmark_active: bool = false
+var benchmark_elapsed: float = 0.0
+var benchmark_samples_ms: Array[float] = []
+var pending_player_health: float = PLAYER_MAX_HEALTH
+var left_click_consumed: bool = false
+var right_click_consumed: bool = false
+var light_registry = null
+var entity_manager = null
+var thumbstones: Array = []
 
 var player: TrumanPlayer
 var world_root: Node3D
@@ -133,6 +156,7 @@ var fullscreen_toggle: CheckBox
 var shadows_toggle: CheckBox
 var ssao_toggle: CheckBox
 var voxel_ao_toggle: CheckBox
+var performance_preset_option: OptionButton
 var skin_file_dialog: FileDialog
 var options_status_label: Label
 var menu_status_label: Label
@@ -158,6 +182,8 @@ func _ready() -> void:
 	block_defs = BlockCatalog.blocks()
 	item_defs = BlockCatalog.items()
 	recipes = BlockCatalog.recipes()
+	voxel_world = VoxelWorldScript.new(block_defs)
+	performance_profile = PerformanceProfileScript.new()
 	inventory_slots = _make_slots(INVENTORY_SLOT_COUNT)
 	craft_slots = _make_slots(4)
 
@@ -165,31 +191,33 @@ func _ready() -> void:
 	_apply_fullscreen(fullscreen_enabled)
 	_setup_materials()
 	_create_lighting()
-	_create_world()
-	_create_player()
 	_create_ui()
-	_give_start_items()
-	player.set_controls_enabled(false)
 	_show_main_menu()
-	_message("Bioma 1 iniciado: 100x100. E abre craft 2x2; bancada abre craft 3x3.")
+	_message("Mundo finito pronto. Inicie um novo jogo para gerar o Bioma 1.")
+
+
+func _physics_process(_delta: float) -> void:
+	if not is_loading_world:
+		_update_cached_target()
+
 
 func _process(delta: float) -> void:
 	if is_loading_world:
-		var chunks_per_frame: int = 8
-		for i in range(chunks_per_frame):
-			if chunks_to_mesh.is_empty():
-				_finish_world_loading()
-				break
-			var c_pos = chunks_to_mesh.pop_back()
-			_update_chunk_mesh(c_pos.x, c_pos.y)
-			meshed_chunks_count += 1
-		if total_chunks_to_mesh > 0:
-			var pct = float(meshed_chunks_count) / float(total_chunks_to_mesh) * 100.0
+		if voxel_sections != null:
+			voxel_sections.process_updates(true)
+			var pct: float = voxel_sections.get_loading_progress() * 100.0
 			loading_progress_bar.value = pct
 			loading_label.text = "Construindo o Mundo: %d%%" % int(pct)
+			if voxel_sections.is_idle():
+				_finish_world_loading()
 		return
 
-	_process_dirty_chunk_meshes(1)
+	if voxel_sections != null:
+		voxel_sections.process_updates(false)
+	if voxel_texture_array != null and player != null:
+		voxel_texture_array.update_micro_foliage(player.global_position, player.velocity)
+	if voxel_debris != null:
+		voxel_debris.update_particles(delta, voxel_world)
 
 	mana = min(MANA_MAX, mana + MANA_REGEN_PER_SECOND * delta)
 	if place_cooldown > 0.0:
@@ -197,26 +225,21 @@ func _process(delta: float) -> void:
 
 	_update_day_night_cycle(delta)
 	_update_leaf_particles(delta)
+	_update_frame_benchmark(delta)
 	
 	if message_time > 0:
 		message_time -= delta
 		if message_time <= 0:
 			message_label.text = ""
 	if player != null and is_instance_valid(player) and player.is_inside_tree():
-		var p_pos: Vector3 = player.global_position
-		var p_block: Vector3i = Vector3i(int(round(p_pos.x)), int(round(p_pos.y)), int(round(p_pos.z)))
-		if p_block != last_collision_update_pos:
-			last_collision_update_pos = p_block
-			_update_active_collisions(p_pos)
-		
 		# Handle held left-click block breaking & held right-click block placing
 		if game_started and not _is_menu_open() and not inventory_panel.visible and not chest_panel.visible:
-			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
+			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not left_click_consumed and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 				_handle_block_breaking(delta)
 			else:
 				_cancel_block_breaking()
 				
-			if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
+			if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not right_click_consumed and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 				if place_cooldown <= 0.0:
 					if _use_or_place_target():
 						place_cooldown = 0.2
@@ -231,14 +254,20 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mouse_event: InputEventMouseButton = event
 		if not mouse_event.pressed:
-			if mouse_event.button_index == MOUSE_BUTTON_LEFT and left_drag_active:
-				_finish_left_drag()
+			if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+				left_click_consumed = false
+				if left_drag_active:
+					_finish_left_drag()
 			elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+				right_click_consumed = false
 				right_drag_active = false
 				right_drag_keys.clear()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_F9:
+			_toggle_frame_benchmark()
+			return
 		if event.keycode == KEY_ESCAPE:
 			if options_panel != null and options_panel.visible:
 				_close_options_panel()
@@ -253,6 +282,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if not game_started or _is_menu_open():
 			return
+		if event.keycode == KEY_SHIFT:
+			_collect_nearby_thumbstone()
 		if event.keycode == KEY_E:
 			if chest_panel.visible or inventory_panel.visible:
 				_close_all_panels()
@@ -291,7 +322,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			_update_hotbar()
 			get_viewport().set_input_as_handled()
 			return
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			left_click_consumed = _handle_primary_click()
+			if left_click_consumed:
+				get_viewport().set_input_as_handled()
+			return
 		if event.button_index == MOUSE_BUTTON_RIGHT:
+			if Input.is_key_pressed(KEY_SHIFT) and _collect_target_thumbstone():
+				right_click_consumed = true
+				get_viewport().set_input_as_handled()
+				return
 			if _use_or_place_target():
 				place_cooldown = 0.2
 
@@ -328,6 +368,25 @@ func _setup_materials() -> void:
 	for item_id in item_defs.keys():
 		_item_icon(item_id)
 		_item_icon_faces(item_id)
+	voxel_texture_array = VoxelTextureArrayScript.new()
+	if voxel_texture_array.build(block_defs):
+		voxel_world.configure_texture_layers(voxel_texture_array.layer_by_path)
+	else:
+		voxel_texture_array = null
+
+
+func _material_for_voxel_surface(surface: Dictionary) -> Material:
+	if bool(surface.get("use_texture_array", false)) and voxel_texture_array != null:
+		var array_material: Material = voxel_texture_array.material_for(str(surface.get("render_class", "opaque")))
+		if array_material != null:
+			return array_material
+	return _material_for_texture(
+		str(surface.get("texture_path", "")),
+		surface.get("fallback_color", Color.WHITE),
+		float(surface.get("alpha", 1.0)),
+		bool(surface.get("transparent", false)),
+		bool(surface.get("foliage", false))
+	)
 
 func _material_for_texture(texture_path: String, fallback_color: Color, alpha: float = 1.0, transparent: bool = false, foliage: bool = false) -> Material:
 	var texture_key: String = texture_path if texture_path != "" else fallback_color.to_html()
@@ -347,7 +406,9 @@ func _material_for_texture(texture_path: String, fallback_color: Color, alpha: f
 	mat.albedo_color = material_color
 	mat.roughness = 0.95
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED if transparent or foliage else BaseMaterial3D.CULL_BACK
+	# Godot exposes texture_repeat as an enum-backed integer; 1 is repeat enabled.
+	mat.texture_repeat = 1
 	mat.vertex_color_use_as_albedo = true
 	if transparent or alpha < 0.99:
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
@@ -365,7 +426,7 @@ func _make_foliage_material(texture_path: String, fallback_color: Color, alpha: 
 shader_type spatial;
 render_mode blend_mix, depth_prepass_alpha, cull_disabled, diffuse_lambert;
 
-uniform sampler2D albedo_texture : source_color, filter_nearest;
+uniform sampler2D albedo_texture : source_color, filter_nearest, repeat_enable;
 uniform vec4 tint : source_color = vec4(1.0, 1.0, 1.0, 0.88);
 uniform float sway_strength = 0.032;
 uniform float sway_speed = 1.05;
@@ -383,8 +444,8 @@ void vertex() {
 void fragment() {
 	vec4 tex = texture(albedo_texture, UV);
 	ALBEDO = tex.rgb * COLOR.rgb * tint.rgb;
-	ALPHA = tex.a * COLOR.a * tint.a;
-	ALPHA_SCISSOR_THRESHOLD = 0.08;
+	ALPHA = step(0.08, tex.a * COLOR.a * tint.a);
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
 }
 """
 	var mat: ShaderMaterial = ShaderMaterial.new()
@@ -406,7 +467,7 @@ func _update_leaf_particles(delta: float) -> void:
 	if leaf_particle_spawn_timer > 0.0:
 		return
 	leaf_particle_spawn_timer = LEAF_PARTICLE_SPAWN_INTERVAL + randf_range(0.0, 0.22)
-	if leaf_particles.size() >= LEAF_PARTICLE_MAX:
+	if leaf_particles.size() >= leaf_particle_limit:
 		return
 	var spawn: Dictionary = _find_leaf_particle_spawn()
 	if spawn.is_empty():
@@ -472,7 +533,7 @@ func _find_leaf_particle_spawn() -> Dictionary:
 		var bottom_y: int = center_y - 3
 		for y in range(top_y, bottom_y - 1, -1):
 			var pos: Vector3i = Vector3i(x, y, z)
-			if _is_foliage_block_id(str(blocks.get(pos, ""))):
+			if voxel_world != null and _is_foliage_block_id(voxel_world.get_block_id(pos)):
 				return {
 					"position": Vector3(
 						float(x) + randf_range(-0.36, 0.36),
@@ -683,6 +744,7 @@ func _create_lighting() -> void:
 	world_env = WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
+	_apply_performance_profile()
 
 func _update_day_night_cycle(delta: float) -> void:
 	if not game_started:
@@ -783,21 +845,22 @@ func _update_day_night_cycle(delta: float) -> void:
 		hud_time_label.text = "Dia %d - %02d:%02d" % [day_count, hours, minutes]
 
 func _create_world() -> void:
+	if voxel_world == null:
+		voxel_world = VoxelWorldScript.new(block_defs)
+	voxel_world.reset(WORLD_SEED)
 	world_root = Node3D.new()
-	world_root.name = "Biome1_Inicio_100x100"
+	world_root.name = "FiniteVoxelWorld_200x200"
 	add_child(world_root)
-
+	voxel_debris = VoxelDebrisSystemScript.new()
+	voxel_debris.name = "VoxelDebris"
+	world_root.add_child(voxel_debris)
+	voxel_debris.configure(block_defs, int(performance_profile.get_settings().get("voxel_debris_max", 256)))
+	voxel_sections = VoxelSectionSystemScript.new()
+	voxel_sections.name = "VoxelSectionSystem"
+	world_root.add_child(voxel_sections)
+	voxel_sections.setup(voxel_world, Callable(self, "_material_for_voxel_surface"), voxel_ao_enabled)
+	_apply_performance_profile()
 	_generate_biome_one_data()
-	_build_visible_world()
-	_create_world_bounds()
-
-	var spawn_surface_y: int = _surface_y_at(52, 52)
-	var spawn_chest_pos: Vector3i = Vector3i(52, spawn_surface_y + 1, 52)
-	var spawn_chest_slots: Array = _make_slots(CHEST_SLOT_COUNT)
-	_set_block(spawn_chest_pos, "chest")
-	_add_item_to_slots(spawn_chest_slots, "planks", 8)
-	_add_item_to_slots(spawn_chest_slots, "coal", 4)
-	chest_inventories[spawn_chest_pos] = spawn_chest_slots
 
 func _create_loading_panel() -> void:
 	loading_panel = _make_center_menu_panel(Vector2(400, 160))
@@ -820,137 +883,23 @@ func _create_loading_panel() -> void:
 	root.add_child(loading_progress_bar)
 
 func _generate_biome_one_data() -> void:
-	blocks.clear()
-	block_nodes.clear()
 	surface_heights.clear()
-	chest_inventories.clear()
-
-	var terrain_noise: FastNoiseLite = FastNoiseLite.new()
-	terrain_noise.seed = WORLD_SEED
-	terrain_noise.frequency = 0.045
-	terrain_noise.fractal_octaves = 3
-
-	var detail_noise: FastNoiseLite = FastNoiseLite.new()
-	detail_noise.seed = WORLD_SEED + 17
-	detail_noise.frequency = 0.12
-	detail_noise.fractal_octaves = 2
-
-	var cave_noise: FastNoiseLite = FastNoiseLite.new()
-	cave_noise.seed = WORLD_SEED + 41
-	cave_noise.frequency = 0.075
-	cave_noise.fractal_octaves = 4
-
-	var cave_detail_noise: FastNoiseLite = FastNoiseLite.new()
-	cave_detail_noise.seed = WORLD_SEED + 77
-	cave_detail_noise.frequency = 0.13
-	cave_detail_noise.fractal_octaves = 3
-
-	for x in range(BIOME_MIN_X, BIOME_MAX_X + 1):
-		for z in range(BIOME_MIN_Z, BIOME_MAX_Z + 1):
-			var surface_y: int = _procedural_surface_y(x, z, terrain_noise, detail_noise)
-			surface_heights[Vector2i(x, z)] = surface_y
-			var bedrock_y: int = _column_bedrock_y(surface_y)
-			var cave_entrance: bool = _is_cave_entrance(x, z, surface_y, cave_noise)
-			for y in range(bedrock_y, surface_y + 1):
-				var depth: int = surface_y - y
-				if y == bedrock_y:
-					_set_block_data(Vector3i(x, y, z), "bedrock")
-				elif _is_signature_cave_at(x, y, z, surface_y, bedrock_y):
-					continue
-				elif cave_entrance and depth <= 5:
-					continue
-				elif depth > 2 and _is_cave_at(x, y, z, surface_y, bedrock_y, cave_noise, cave_detail_noise):
-					continue
-				elif y == surface_y:
-					_set_block_data(Vector3i(x, y, z), "grass")
-				elif depth <= 3:
-					_set_block_data(Vector3i(x, y, z), "dirt")
-				else:
-					_set_block_data(Vector3i(x, y, z), _stone_or_ore_for_depth(x, y, z, depth))
-
-	_generate_procedural_trees()
-	_generate_ground_decorations()
-
-func _procedural_surface_y(x: int, z: int, terrain_noise: FastNoiseLite, detail_noise: FastNoiseLite) -> int:
-	var broad: float = terrain_noise.get_noise_2d(float(x), float(z))
-	var detail: float = detail_noise.get_noise_2d(float(x), float(z))
-	var height: int = int(round(float(SURFACE_BASE_Y) + broad * 5.0 + detail * 2.0))
-	return clamp(height, SURFACE_MIN_Y, SURFACE_MAX_Y)
-
-func _column_bedrock_y(surface_y: int) -> int:
-	return surface_y - WORLD_DEPTH + 1
-
-func _is_signature_cave_at(x: int, y: int, z: int, surface_y: int, bedrock_y: int) -> bool:
-	if y <= bedrock_y + 1:
-		return false
-	var depth: int = surface_y - y
-	if depth < 0:
-		return false
-	var t: float = clamp(float(depth) / float(WORLD_DEPTH - 4), 0.0, 1.0)
-	var center: Vector2 = _signature_cave_center(t)
-	var radius: float = _signature_cave_radius(t)
-	var horizontal_distance: float = Vector2(float(x), float(z)).distance_to(center)
-	if horizontal_distance <= radius:
-		return true
-
-	var entrance_center: Vector2 = _signature_cave_center(0.0)
-	var entrance_distance: float = Vector2(float(x), float(z)).distance_to(entrance_center)
-	if depth <= 7 and entrance_distance <= 14.0:
-		return true
-	return false
-
-func _signature_cave_center(t: float) -> Vector2:
-	var curved_x: float = lerp(24.0, 78.0, t) + sin(t * TAU * 1.35) * 10.0
-	var curved_z: float = lerp(14.0, 82.0, t) + sin(t * TAU * 0.9 + 0.8) * 8.0
-	return Vector2(curved_x, curved_z)
-
-func _signature_cave_radius(t: float) -> float:
-	var belly: float = sin(t * PI)
-	return 7.5 + belly * 5.0 + (1.0 - t) * 2.0
-
-func _is_cave_entrance(x: int, z: int, surface_y: int, cave_noise: FastNoiseLite) -> bool:
-	var spawn_distance: float = Vector2(float(x - 50), float(z - 50)).length()
-	if spawn_distance < 10.0:
-		return false
-	var entrance_noise: float = cave_noise.get_noise_3d(float(x), float(surface_y - 4), float(z))
-	return entrance_noise > 0.56 and _hash01(x, surface_y, z, 9001) > 0.82
-
-func _is_cave_at(
-	x: int,
-	y: int,
-	z: int,
-	surface_y: int,
-	bedrock_y: int,
-	cave_noise: FastNoiseLite,
-	cave_detail_noise: FastNoiseLite
-) -> bool:
-	var depth: int = surface_y - y
-	if depth < 3 or y <= bedrock_y + 1:
-		return false
-	var spawn_distance: float = Vector3(float(x - 50), float(y - surface_y), float(z - 50)).length()
-	if spawn_distance < 8.0 and depth < 16:
-		return false
-	var main_value: float = cave_noise.get_noise_3d(float(x), float(y), float(z))
-	var detail_value: float = cave_detail_noise.get_noise_3d(float(x), float(y), float(z))
-	if depth < 8:
-		return main_value > 0.62 and detail_value > 0.18
-	return main_value > 0.46 and detail_value > -0.08
-
-func _stone_or_ore_for_depth(x: int, y: int, z: int, depth: int) -> String:
-	var roll: float = _hash01(x, y, z, 123)
-	if depth >= 44 and roll < 0.006:
-		return "manita_ore"
-	if depth >= 22 and roll < 0.024:
-		return "iron_ore"
-	if depth >= 8 and depth <= 44 and roll < 0.042:
-		return "copper_ore"
-	if depth >= 5 and roll < 0.068:
-		return "coal_ore"
-	return "stone"
-
-func _hash01(x: int, y: int, z: int, salt: int) -> float:
-	var value: float = sin(float(x) * 12.9898 + float(y) * 78.233 + float(z) * 37.719 + float(salt) * 19.19) * 43758.5453
-	return value - floor(value)
+	_clear_chest_inventories()
+	active_terrain_tile = TerrainTileDataScript.load_from_file(DEFAULT_TERRAIN_TILE_PATH)
+	if active_terrain_tile == null:
+		active_terrain_tile = TerrainTileDataScript.create_draft(WORLD_SEED, Vector2i.ZERO)
+	active_structure_registry = StructureRegistryScript.load_from_file(DEFAULT_STRUCTURE_REGISTRY_PATH)
+	if active_structure_registry == null:
+		active_structure_registry = StructureRegistryScript.empty_registry()
+	active_terrain_hash = active_terrain_tile.content_hash()
+	active_registry_hash = active_structure_registry.content_hash()
+	var generator = TerrainGeneratorScript.new()
+	last_generation_report = generator.generate_into(voxel_world, active_terrain_tile, active_structure_registry, WORLD_SEED)
+	if not last_generation_report.is_ok():
+		push_error(last_generation_report.summary())
+	for z in range(TerrainTileDataScript.TILE_SIZE):
+		for x in range(TerrainTileDataScript.TILE_SIZE):
+			surface_heights[Vector2i(x, z)] = active_terrain_tile.get_height(x, z)
 
 func _create_world_bounds() -> void:
 	_add_world_wall(
@@ -973,6 +922,7 @@ func _create_world_bounds() -> void:
 		Vector3(BIOME_SIZE * 0.5 - 0.5, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, BIOME_MAX_Z + 1),
 		Vector3(BIOME_SIZE + 2, WORLD_WALL_HEIGHT, 1)
 	)
+	_add_world_ceiling()
 
 func _add_world_wall(wall_name: String, wall_position: Vector3, wall_size: Vector3) -> void:
 	var body: StaticBody3D = StaticBody3D.new()
@@ -985,154 +935,182 @@ func _add_world_wall(wall_name: String, wall_position: Vector3, wall_size: Vecto
 	body.add_child(collision)
 	world_root.add_child(body)
 
-func _generate_procedural_trees() -> void:
-	for x in range(6, BIOME_SIZE - 6, 4):
-		for z in range(6, BIOME_SIZE - 6, 4):
-			var roll: float = _hash01(x, 7, z, 404)
-			if roll < 0.86:
-				continue
-			var jitter_x: int = int(floor(_hash01(x, 1, z, 405) * 3.0)) - 1
-			var jitter_z: int = int(floor(_hash01(x, 2, z, 406) * 3.0)) - 1
-			var tree_x: int = clamp(x + jitter_x, BIOME_MIN_X + 3, BIOME_MAX_X - 3)
-			var tree_z: int = clamp(z + jitter_z, BIOME_MIN_Z + 3, BIOME_MAX_Z - 3)
-			if Vector2(float(tree_x - 50), float(tree_z - 50)).length() < 9.0:
-				continue
-			var surface_y: int = _surface_y_at(tree_x, tree_z)
-			var ground_pos: Vector3i = Vector3i(tree_x, surface_y, tree_z)
-			if blocks.get(ground_pos, "") == "grass":
-				_place_tree_data(Vector3i(tree_x, surface_y + 1, tree_z))
 
-func _generate_ground_decorations() -> void:
-	for x in range(BIOME_MIN_X, BIOME_MAX_X + 1):
-		for z in range(BIOME_MIN_Z, BIOME_MAX_Z + 1):
-			if Vector2(float(x - 50), float(z - 50)).length() < 9.0:
-				continue
-				
-			var surface_y: int = _surface_y_at(x, z)
-			var pos: Vector3i = Vector3i(x, surface_y, z)
-			if blocks.get(pos, "") != "grass":
-				continue
-				
-			var spawn_pos: Vector3i = Vector3i(x, surface_y + 1, z)
-			if blocks.has(spawn_pos) and blocks[spawn_pos] != "" and blocks[spawn_pos] != "air":
-				continue
-				
-			var roll: float = _hash01(x, surface_y, z, 707)
-			if roll < 0.12:
-				var roll_decor: float = _hash01(x, surface_y, z, 808)
-				var decor_id: String = ""
-				if roll_decor < 0.55:
-					decor_id = "short_grass"
-				elif roll_decor < 0.80:
-					decor_id = "wild_grass"
-				elif roll_decor < 0.88:
-					decor_id = "dandelion"
-				elif roll_decor < 0.96:
-					decor_id = "poppy"
-				elif roll_decor < 0.98:
-					decor_id = "cornflower"
-				else:
-					decor_id = "oxeye_daisy"
-				
-				_set_block_data(spawn_pos, decor_id)
-
-func _place_tree_data(base: Vector3i) -> void:
-	var trunk_height: int = 4 + int(floor(_hash01(base.x, base.y, base.z, 505) * 3.0))
-	for y in range(0, trunk_height):
-		_set_block_data(base + Vector3i(0, y, 0), "wood")
-	var leaf_center_y: int = trunk_height
-	
-	# Determine clump configurations deterministically based on tree position
-	var center_r: float = 2.8 + _hash01(base.x, base.y, base.z, 100) * 0.8 # 2.8 to 3.6
-	
-	# Clump 1 (offset North-East-ish)
-	var c1_offset_x: float = 1.0 + _hash01(base.x, base.y, base.z, 101) * 1.5
-	var c1_offset_z: float = 1.0 + _hash01(base.x, base.y, base.z, 102) * 1.5
-	var c1_offset_y: float = float(leaf_center_y) + _hash01(base.x, base.y, base.z, 103) * 1.5
-	var c1_r: float = 1.8 + _hash01(base.x, base.y, base.z, 104) * 0.8
-	
-	# Clump 2 (offset South-West-ish)
-	var c2_offset_x: float = -1.0 - _hash01(base.x, base.y, base.z, 105) * 1.5
-	var c2_offset_z: float = -1.0 - _hash01(base.x, base.y, base.z, 106) * 1.5
-	var c2_offset_y: float = float(leaf_center_y) - 0.5 + _hash01(base.x, base.y, base.z, 107) * 1.5
-	var c2_r: float = 1.7 + _hash01(base.x, base.y, base.z, 108) * 0.8
-	
-	# Clump 3 (Top cap)
-	var c3_offset_x: float = (_hash01(base.x, base.y, base.z, 109) - 0.5) * 1.0
-	var c3_offset_z: float = (_hash01(base.x, base.y, base.z, 110) - 0.5) * 1.0
-	var c3_offset_y: float = float(leaf_center_y) + 2.2 + _hash01(base.x, base.y, base.z, 111) * 1.0
-	var c3_r: float = 1.5 + _hash01(base.x, base.y, base.z, 112) * 0.6
-
-	# Bounding box search: x in [-4, 4], z in [-4, 4], y offsets from -3 to 5
-	for y_offset in range(-3, 6):
-		for x in range(-4, 5):
-			for z in range(-4, 5):
-				var pos: Vector3i = base + Vector3i(x, leaf_center_y + y_offset, z)
-				if blocks.has(pos):
-					continue
-				
-				var in_canopy: bool = false
-				var edge_dist: float = 999.0
-				
-				# Central clump check
-				var d_cent: float = Vector3(float(x), float(y_offset) - 0.5, float(z)).length()
-				if d_cent <= center_r:
-					in_canopy = true
-					edge_dist = min(edge_dist, center_r - d_cent)
-				
-				# Clump 1 check
-				var d_c1: float = Vector3(float(x) - c1_offset_x, float(y_offset) - (c1_offset_y - leaf_center_y), float(z) - c1_offset_z).length()
-				if d_c1 <= c1_r:
-					in_canopy = true
-					edge_dist = min(edge_dist, c1_r - d_c1)
-				
-				# Clump 2 check
-				var d_c2: float = Vector3(float(x) - c2_offset_x, float(y_offset) - (c2_offset_y - leaf_center_y), float(z) - c2_offset_z).length()
-				if d_c2 <= c2_r:
-					in_canopy = true
-					edge_dist = min(edge_dist, c2_r - d_c2)
-				
-				# Clump 3 check
-				var d_c3: float = Vector3(float(x) - c3_offset_x, float(y_offset) - (c3_offset_y - leaf_center_y), float(z) - c3_offset_z).length()
-				if d_c3 <= c3_r:
-					in_canopy = true
-					edge_dist = min(edge_dist, c3_r - d_c3)
-				
-				if not in_canopy:
-					continue
-				
-				# Calculate skip chance to make the canopy silhouette softer and irregular
-				var skip_chance: float = 0.05
-				if edge_dist < 0.8:
-					skip_chance += (0.8 - edge_dist) * 0.45
-				
-				# Softer lower skirt (y_offset <= -2)
-				if y_offset <= -2:
-					skip_chance += 0.25 + (abs(y_offset) - 2) * 0.2
-				# Uneven top cap (y_offset >= 3)
-				elif y_offset >= 3:
-					skip_chance += 0.20 + (y_offset - 3) * 0.15
-				
-				# Deterministic noise check
-				var gap_roll: float = _hash01(pos.x, pos.y, pos.z, 612)
-				if gap_roll < skip_chance:
-					continue
-				
-				_set_block_data(pos, "leaves")
+func _add_world_ceiling() -> void:
+	# The top voxel layer is reserved for the later Skybreaker sequence.  It is
+	# a single static bound rather than thousands of ceiling-block colliders.
+	var body: StaticBody3D = StaticBody3D.new()
+	body.name = "WorldSkyBoundary"
+	body.position = Vector3(BIOME_SIZE * 0.5 - 0.5, float(VoxelWorldScript.WORLD_MAX_Y) + 0.5, BIOME_SIZE * 0.5 - 0.5)
+	var collision: CollisionShape3D = CollisionShape3D.new()
+	var shape: BoxShape3D = BoxShape3D.new()
+	shape.size = Vector3(BIOME_SIZE + 2, 1.0, BIOME_SIZE + 2)
+	collision.shape = shape
+	body.add_child(collision)
+	world_root.add_child(body)
 
 func _surface_y_at(x: int, z: int) -> int:
+	if voxel_world != null:
+		return voxel_world.get_surface_height(x, z, SURFACE_BASE_Y)
 	var key: Vector2i = Vector2i(x, z)
 	return int(surface_heights.get(key, SURFACE_BASE_Y))
 
 func _create_player() -> void:
 	player = TrumanPlayer.new()
 	player.name = "Player"
+	player.max_health = PLAYER_MAX_HEALTH
+	player.health = pending_player_health
 	player.position = Vector3(50.5, float(_surface_y_at(50, 50)) + 2.4, 50.5)
 	add_child(player)
+	player.health_changed.connect(_on_player_health_changed)
+	player.died.connect(_on_player_died)
 	player.set_camera_mode(saved_camera_mode)
 	_apply_current_skin()
 	_sync_held_item(true)
 	_update_player_visual_visibility()
+
+func _create_runtime_systems() -> void:
+	light_registry = LightRegistryScript.new()
+	light_registry.name = "LightRegistry"
+	world_root.add_child(light_registry)
+	light_registry.configure(voxel_world)
+	entity_manager = EntityManagerScript.new()
+	entity_manager.name = "EntityManager"
+	world_root.add_child(entity_manager)
+	var special_spawns: Array = last_generation_report.entity_spawns if last_generation_report != null else []
+	entity_manager.configure(self, voxel_world, light_registry, special_spawns)
+	if continue_on_load_finish:
+		_load_thumbstones(loaded_game_data.get("thumbstones", []))
+
+func can_spawn_entities() -> bool:
+	return game_started and player != null and not player.dead and not _is_menu_open()
+
+func is_night() -> bool:
+	return time_of_day < 6.0 or time_of_day >= 18.0
+
+func find_floor_y(position: Vector3, max_depth: int = 10) -> int:
+	if voxel_world == null:
+		return -999
+	var x: int = floori(position.x + 0.5)
+	var z: int = floori(position.z + 0.5)
+	var start_y: int = mini(VoxelWorldScript.WORLD_MAX_Y, floori(position.y + 0.5))
+	for y in range(start_y, maxi(VoxelWorldScript.WORLD_MIN_Y - 1, start_y - max_depth - 1), -1):
+		if _is_solid_block_at(Vector3i(x, y, z)):
+			return y
+	return -999
+
+func has_sky_access(pos: Vector3i) -> bool:
+	if voxel_world == null:
+		return false
+	for y in range(pos.y, VoxelWorldScript.WORLD_MAX_Y + 1):
+		if voxel_world.has_block(Vector3i(pos.x, y, pos.z)):
+			return false
+	return true
+
+func is_rabbit_step_safe(from: Vector3, to: Vector3) -> bool:
+	var current_floor: int = find_floor_y(from + Vector3.UP, 3)
+	var next_floor: int = find_floor_y(to + Vector3.UP, 3)
+	if current_floor <= -999 or next_floor <= -999 or abs(next_floor - current_floor) > 1:
+		return false
+	var next_cell := Vector3i(floori(to.x + 0.5), next_floor + 1, floori(to.z + 0.5))
+	return has_sky_access(next_cell)
+
+func is_spawn_position_visible(position: Vector3) -> bool:
+	if player == null or player.camera == null or not player.camera.is_position_in_frustum(position):
+		return false
+	var query := PhysicsRayQueryParameters3D.create(player.get_interaction_ray_start(), position, 1)
+	query.exclude = [player]
+	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+func _on_player_health_changed(_current: float, _maximum: float) -> void:
+	last_status_text = ""
+
+func _on_player_died() -> void:
+	call_deferred("_handle_player_death")
+
+func _handle_player_death() -> void:
+	if player == null or not player.dead:
+		return
+	var death_position: Vector3 = player.global_position
+	var stone_position: Vector3 = _find_safe_thumbstone_position(death_position)
+	var stone := ThumbstoneScript.new()
+	stone.configure(self, str(Time.get_ticks_usec()), inventory_slots, stone_position)
+	world_root.add_child(stone)
+	thumbstones.append(stone)
+	inventory_slots = _make_slots(INVENTORY_SLOT_COUNT)
+	craft_slots = _make_slots(4)
+	cursor_stack = _empty_slot()
+	selected_hotbar_index = 0
+	player.global_position = Vector3(50.5, float(_surface_y_at(50, 50)) + 2.4, 50.5)
+	player.velocity = Vector3.ZERO
+	player.restore_health()
+	player.set_controls_enabled(true)
+	_update_all_ui()
+	_message("Voce morreu. Seus itens estao na thumbstone.")
+
+func _find_safe_thumbstone_position(origin: Vector3) -> Vector3:
+	for radius in range(0, 5):
+		for dz in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				var probe := origin + Vector3(dx, 3.0, dz)
+				var floor_y: int = find_floor_y(probe, 14)
+				if floor_y <= -999:
+					continue
+				var cell := Vector3i(floori(probe.x + 0.5), floor_y + 1, floori(probe.z + 0.5))
+				if not voxel_world.has_block(cell) and not voxel_world.has_block(cell + Vector3i.UP):
+					return Vector3(probe.x, floor_y + 0.5, probe.z)
+	return Vector3(50.5, float(_surface_y_at(50, 50)) + 0.5, 50.5)
+
+func collect_thumbstone(stone) -> void:
+	if stone == null or not is_instance_valid(stone):
+		return
+	var remaining: Array = []
+	for raw_slot in stone.contents:
+		if typeof(raw_slot) != TYPE_DICTIONARY:
+			continue
+		var slot: Dictionary = raw_slot
+		var item_id: String = _slot_item(slot)
+		var count: int = _slot_count(slot)
+		if item_id == "" or count <= 0:
+			continue
+		if not _inventory_can_accept(item_id) or not _add_item_to_slots(inventory_slots, item_id, count):
+			remaining.append(slot.duplicate(true))
+	stone.contents = remaining
+	_update_all_ui()
+	if remaining.is_empty():
+		thumbstones.erase(stone)
+		stone.queue_free()
+		_message("Itens da thumbstone recuperados.")
+	else:
+		_message("Inventario cheio: o restante continua na thumbstone.")
+
+func _inventory_can_accept(item_id: String) -> bool:
+	for raw_slot in inventory_slots:
+		var slot: Dictionary = raw_slot
+		if _slot_item(slot) in ["", item_id]:
+			return true
+	return false
+
+func _load_thumbstones(raw_value: Variant) -> void:
+	if typeof(raw_value) != TYPE_ARRAY:
+		return
+	for raw_entry in raw_value as Array:
+		if typeof(raw_entry) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = raw_entry
+		var slots: Array = _slots_from_data(entry.get("contents", []), INVENTORY_SLOT_COUNT)
+		var position: Vector3 = _vector3_from_data(entry.get("position", []), Vector3(50.5, float(_surface_y_at(50, 50)) + 0.5, 50.5))
+		var stone := ThumbstoneScript.new()
+		stone.configure(self, str(entry.get("id", Time.get_ticks_usec())), slots, position)
+		world_root.add_child(stone)
+		thumbstones.append(stone)
+
+func _thumbstones_to_data() -> Array:
+	var result: Array = []
+	for stone in thumbstones:
+		if is_instance_valid(stone) and not stone.is_queued_for_deletion():
+			result.append(stone.to_data())
+	return result
 
 func _create_ui() -> void:
 	ui_layer = CanvasLayer.new()
@@ -1215,7 +1193,7 @@ func _make_menu_button(text: String, callback: Callable) -> Button:
 	return button
 
 func _create_menu_panels() -> void:
-	main_menu_panel = _make_center_menu_panel(Vector2(380, 340))
+	main_menu_panel = _make_center_menu_panel(Vector2(400, 430))
 	ui_layer.add_child(main_menu_panel)
 
 	var main_root: VBoxContainer = VBoxContainer.new()
@@ -1231,6 +1209,8 @@ func _create_menu_panels() -> void:
 	continue_button = _make_menu_button("Continuar", _continue_game)
 	main_root.add_child(continue_button)
 	main_root.add_child(_make_menu_button("Novo Jogo", _start_new_game))
+	main_root.add_child(_make_menu_button("Editor de Terreno", _open_terrain_editor))
+	main_root.add_child(_make_menu_button("Estudio de Estruturas", _open_structure_studio))
 	main_root.add_child(_make_menu_button("Opcoes", _open_options_from_main))
 	main_root.add_child(_make_menu_button("Sair", _quit_game))
 
@@ -1300,6 +1280,13 @@ func _create_menu_panels() -> void:
 	voxel_ao_toggle.toggled.connect(_on_voxel_ao_toggled)
 	options_root.add_child(voxel_ao_toggle)
 
+	performance_preset_option = OptionButton.new()
+	performance_preset_option.add_item("Qualidade alta", PerformanceProfileScript.Preset.HIGH)
+	performance_preset_option.add_item("Desempenho 120 FPS", PerformanceProfileScript.Preset.PERFORMANCE)
+	performance_preset_option.select(performance_preset)
+	performance_preset_option.item_selected.connect(_on_performance_preset_selected)
+	options_root.add_child(performance_preset_option)
+
 	options_root.add_child(_make_menu_button("Importar skin", _open_skin_file_dialog))
 
 	options_status_label = Label.new()
@@ -1342,26 +1329,36 @@ func _show_main_menu() -> void:
 	if main_menu_panel != null:
 		main_menu_panel.visible = true
 	if continue_button != null:
-		continue_button.disabled = not FileAccess.file_exists(SAVE_PATH)
+		continue_button.disabled = not FileAccess.file_exists(SAVE_PATH) and not FileAccess.file_exists(V3_SAVE_PATH)
 	if menu_status_label != null:
-		menu_status_label.text = ""
+		var has_old_save: bool = FileAccess.file_exists(V2_SAVE_PATH) or FileAccess.file_exists(LEGACY_SAVE_PATH)
+		menu_status_label.text = "Save V2/antigo preservado: a nova geracao usa mundos V4." if not FileAccess.file_exists(SAVE_PATH) and not FileAccess.file_exists(V3_SAVE_PATH) and has_old_save else ""
 	_set_game_hud_visible(false)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	if player != null:
 		player.set_controls_enabled(false)
 
 func _start_new_game() -> void:
-	_start_world_loading(true, false)
+	_start_world_loading(false)
+
+
+func _open_terrain_editor() -> void:
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	get_tree().change_scene_to_file("res://scenes/terrain_editor.tscn")
+
+
+func _open_structure_studio() -> void:
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	get_tree().change_scene_to_file("res://scenes/structure_studio.tscn")
 
 func _continue_game() -> void:
-	if not FileAccess.file_exists(SAVE_PATH):
+	if not FileAccess.file_exists(SAVE_PATH) and not FileAccess.file_exists(V3_SAVE_PATH):
 		if menu_status_label != null:
 			menu_status_label.text = "Nenhum save encontrado."
 		return
-	_start_world_loading(false, true)
+	_start_world_loading(true)
 
-func _start_world_loading(enable_tracking: bool, is_continue: bool) -> void:
-	tracking_on_load_finish = enable_tracking
+func _start_world_loading(is_continue: bool) -> void:
 	continue_on_load_finish = is_continue
 	
 	if main_menu_panel != null:
@@ -1378,24 +1375,18 @@ func _start_world_loading(enable_tracking: bool, is_continue: bool) -> void:
 	# Wait one frame for UI to update
 	await get_tree().process_frame
 	
-	# Reset states
-	tracking_world_changes = false
-	changed_blocks.clear()
-	removed_blocks.clear()
-	blocks.clear()
-	block_nodes.clear()
-	chunk_nodes.clear()
-	blocks_in_chunk.clear()
-	dirty_chunk_queue.clear()
-	dirty_chunk_keys.clear()
-	last_collision_update_pos = Vector3i(-999, -999, -999)
+	# Reset gameplay state.  The VoxelWorld owns all terrain data and section
+	# state, so no per-block node or dictionary teardown is needed here.
+	if voxel_world != null:
+		voxel_world.set_tracking_changes(false)
 	surface_heights.clear()
-	chest_inventories.clear()
+	_clear_chest_inventories()
 	inventory_slots = _make_slots(INVENTORY_SLOT_COUNT)
 	craft_slots = _make_slots(4)
 	craft_size = 2
 	craft_context = "inventory"
 	selected_hotbar_index = 0
+	pending_player_health = PLAYER_MAX_HEALTH
 	mana = MANA_MAX
 	manita_pickaxe_xp = 0
 	manita_pickaxe_level = 1
@@ -1409,6 +1400,12 @@ func _start_world_loading(enable_tracking: bool, is_continue: bool) -> void:
 	left_drag_keys.clear()
 	right_drag_active = false
 	right_drag_keys.clear()
+	left_click_consumed = false
+	right_click_consumed = false
+	loaded_game_data.clear()
+	thumbstones.clear()
+	light_registry = null
+	entity_manager = null
 	
 	for item in dropped_items:
 		if is_instance_valid(item):
@@ -1419,39 +1416,44 @@ func _start_world_loading(enable_tracking: bool, is_continue: bool) -> void:
 	breaking_progress = 0.0
 	breaking_overlay = null
 	_clear_target_outline()
+	target_outline = null
+	cached_target = null
+	cached_target_physics_frame = -1
 	
 	if world_root != null and is_instance_valid(world_root):
+		if voxel_sections != null:
+			voxel_sections.shutdown()
 		remove_child(world_root)
 		world_root.queue_free()
+		world_root = null
+	voxel_sections = null
+	voxel_debris = null
 	if player != null and is_instance_valid(player):
 		remove_child(player)
 		player.queue_free()
 		
-	world_root = Node3D.new()
-	world_root.name = "Biome1_Inicio_100x100"
-	add_child(world_root)
-	
-	_generate_biome_one_data()
+	_create_world()
 		
 	if is_continue:
 		if not _load_game_state():
 			if menu_status_label != null:
-				menu_status_label.text = "Nao foi possivel carregar o save."
+				menu_status_label.text = last_load_error if last_load_error != "" else "Nao foi possivel carregar o save."
 			_show_main_menu()
 			if loading_panel != null:
 				loading_panel.visible = false
 			return
 			
-	var active_chunks: Dictionary = {}
-	for pos in blocks.keys():
-		var c_pos = _get_chunk_coords(pos)
-		active_chunks[c_pos] = true
-		
-	chunks_to_mesh = active_chunks.keys()
-	total_chunks_to_mesh = chunks_to_mesh.size()
-	meshed_chunks_count = 0
-	dirty_chunk_queue.clear()
-	dirty_chunk_keys.clear()
+	if not is_continue:
+		var spawn_surface_y: int = _surface_y_at(52, 52)
+		var spawn_chest_pos: Vector3i = Vector3i(52, spawn_surface_y + 1, 52)
+		_set_block(spawn_chest_pos, "chest")
+		var spawn_chest_slots: Array = _make_slots(CHEST_SLOT_COUNT)
+		_add_item_to_slots(spawn_chest_slots, "planks", 8)
+		_add_item_to_slots(spawn_chest_slots, "coal", 4)
+		_set_chest_inventory(spawn_chest_pos, spawn_chest_slots)
+
+	if voxel_sections != null:
+		voxel_sections.queue_rebuild_all(true)
 	is_loading_world = true
 
 func _finish_world_loading() -> void:
@@ -1460,6 +1462,7 @@ func _finish_world_loading() -> void:
 		loading_panel.visible = false
 		
 	_create_world_bounds()
+	_apply_performance_profile()
 	_create_player()
 	
 	if continue_on_load_finish:
@@ -1471,18 +1474,10 @@ func _finish_world_loading() -> void:
 			)
 	else:
 		_give_start_items()
-		var spawn_surface_y: int = _surface_y_at(52, 52)
-		var spawn_chest_pos: Vector3i = Vector3i(52, spawn_surface_y + 1, 52)
-		var spawn_chest_slots: Array = _make_slots(CHEST_SLOT_COUNT)
-		_set_block(spawn_chest_pos, "chest")
-		_add_item_to_slots(spawn_chest_slots, "planks", 8)
-		_add_item_to_slots(spawn_chest_slots, "coal", 4)
-		chest_inventories[spawn_chest_pos] = spawn_chest_slots
-		
-	# Build active collisions around the player's position immediately
-	_update_active_collisions(player.position)
+	_create_runtime_systems()
 	
-	tracking_world_changes = tracking_on_load_finish
+	if voxel_world != null:
+		voxel_world.set_tracking_changes(true)
 	_begin_gameplay()
 	
 	if continue_on_load_finish:
@@ -1492,7 +1487,6 @@ func _finish_world_loading() -> void:
 
 func _begin_gameplay() -> void:
 	game_started = true
-	tracking_world_changes = true
 	if main_menu_panel != null:
 		main_menu_panel.visible = false
 	if pause_menu_panel != null:
@@ -1556,6 +1550,8 @@ func _open_options_panel(origin: String) -> void:
 		ssao_toggle.button_pressed = ssao_enabled
 	if voxel_ao_toggle != null:
 		voxel_ao_toggle.button_pressed = voxel_ao_enabled
+	if performance_preset_option != null:
+		performance_preset_option.select(performance_preset)
 	if main_menu_panel != null:
 		main_menu_panel.visible = false
 	if pause_menu_panel != null:
@@ -1608,7 +1604,16 @@ func _on_ssao_toggled(enabled: bool) -> void:
 
 func _on_voxel_ao_toggled(enabled: bool) -> void:
 	voxel_ao_enabled = enabled
-	_refresh_all_chunk_meshes()
+	if voxel_sections != null:
+		voxel_sections.set_voxel_ao_enabled(enabled)
+	_save_settings()
+
+
+func _on_performance_preset_selected(index: int) -> void:
+	performance_preset = index
+	if performance_profile != null:
+		performance_profile.set_preset(performance_preset)
+	_apply_performance_profile()
 	_save_settings()
 
 func _open_skin_file_dialog() -> void:
@@ -1646,6 +1651,28 @@ func _apply_shadow_setting() -> void:
 func _apply_ssao_setting() -> void:
 	if fog_env != null:
 		fog_env.ssao_enabled = ssao_enabled
+	_apply_performance_profile()
+
+
+func _apply_performance_profile() -> void:
+	if performance_profile == null:
+		return
+	performance_profile.set_preset(performance_preset)
+	var settings: Dictionary = performance_profile.apply_to(
+		fog_env,
+		sun_light,
+		moon_light,
+		voxel_sections
+	)
+	leaf_particle_limit = int(settings.get("leaf_particle_max", LEAF_PARTICLE_MAX))
+	if voxel_debris != null:
+		voxel_debris.set_capacity_limit(int(settings.get("voxel_debris_max", 256)))
+	if voxel_sections != null:
+		voxel_sections.configure_micro_foliage(
+			int(settings.get("micro_foliage_density", 4)),
+			float(settings.get("micro_foliage_distance", 80.0)),
+			bool(settings.get("micro_foliage_shadows", true))
+		)
 
 func _set_game_hud_visible(p_visible: bool) -> void:
 	if crosshair_label != null:
@@ -1832,261 +1859,25 @@ func _give_start_items() -> void:
 	_add_item("short_grass", 5)
 	_update_all_ui()
 
-func _set_block(pos: Vector3i, block_id: String) -> void:
-	if not block_defs.has(block_id):
-		return
-	blocks[pos] = block_id
-	var c_pos: Vector2i = _get_chunk_coords(pos)
-	if not blocks_in_chunk.has(c_pos):
-		blocks_in_chunk[c_pos] = {}
-	blocks_in_chunk[c_pos][pos] = block_id
-	
-	if tracking_world_changes:
-		var key: String = _pos_key(pos)
-		changed_blocks[key] = block_id
-		removed_blocks.erase(key)
-	_refresh_block_and_neighbors(pos)
+func _set_block(pos: Vector3i, block_id: String):
+	if voxel_world == null:
+		return EditResultScript.rejected("world_unavailable", pos, block_id)
+	if not voxel_world.is_buildable(pos):
+		return EditResultScript.rejected("locked_or_out_of_bounds", pos, block_id)
+	if not VoxelDependencyResolverScript.can_place(voxel_world, pos, block_id, block_defs):
+		return EditResultScript.rejected("missing_solid_support", pos, block_id)
+	if not voxel_world.set_block(pos, block_id):
+		return EditResultScript.rejected("unchanged_or_unknown_block", pos, block_id)
+	if block_id == "torch":
+		voxel_world.set_metadata(pos, LightRegistryScript.METADATA_KEY, true)
+		if light_registry != null:
+			light_registry.register_torch(pos, false)
+	_queue_voxel_sections_for_edit(pos)
+	return EditResultScript.accepted(pos, block_id)
 
 func _set_block_data(pos: Vector3i, block_id: String) -> void:
-	if not block_defs.has(block_id):
-		return
-	blocks[pos] = block_id
-	var c_pos: Vector2i = _get_chunk_coords(pos)
-	if not blocks_in_chunk.has(c_pos):
-		blocks_in_chunk[c_pos] = {}
-	blocks_in_chunk[c_pos][pos] = block_id
-
-func _erase_block_data(pos: Vector3i) -> void:
-	if blocks.has(pos):
-		blocks.erase(pos)
-	var c_pos: Vector2i = _get_chunk_coords(pos)
-	if blocks_in_chunk.has(c_pos):
-		blocks_in_chunk[c_pos].erase(pos)
-		if blocks_in_chunk[c_pos].is_empty():
-			blocks_in_chunk.erase(c_pos)
-
-func _build_visible_world() -> void:
-	chunk_nodes.clear()
-	dirty_chunk_queue.clear()
-	dirty_chunk_keys.clear()
-	var active_chunks: Dictionary = {}
-	for pos in blocks.keys():
-		var c_pos: Vector2i = _get_chunk_coords(pos)
-		active_chunks[c_pos] = true
-	for c_pos in active_chunks.keys():
-		_update_chunk_mesh(c_pos.x, c_pos.y)
-
-func _refresh_all_chunk_meshes() -> void:
-	for c_pos in blocks_in_chunk.keys():
-		_queue_chunk_mesh_update(c_pos.x, c_pos.y)
-
-func _get_chunk_coords(pos: Vector3i) -> Vector2i:
-	return Vector2i(
-		int(floor(float(pos.x) / CHUNK_SIZE)),
-		int(floor(float(pos.z) / CHUNK_SIZE))
-	)
-
-func _get_chunk_node(cx: int, cz: int) -> Node3D:
-	var key: Vector2i = Vector2i(cx, cz)
-	if chunk_nodes.has(key):
-		return chunk_nodes[key]
-	var chunk: Node3D = Node3D.new()
-	chunk.name = "Chunk_%s_%s" % [cx, cz]
-	chunk.position = Vector3(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE)
-	world_root.add_child(chunk)
-	chunk_nodes[key] = chunk
-	return chunk
-
-func _update_chunk_mesh(cx: int, cz: int) -> void:
-	var c_key: Vector2i = Vector2i(cx, cz)
-	dirty_chunk_keys.erase(c_key)
-	var chunk: Node3D = _get_chunk_node(cx, cz)
-	
-	for child in chunk.get_children():
-		chunk.remove_child(child)
-		child.queue_free()
-
-	var chunk_blocks: Dictionary = blocks_in_chunk.get(c_key, {})
-	var surface_builders: Dictionary = {}
-	for pos in chunk_blocks.keys():
-		var block_id: String = chunk_blocks[pos]
-		if block_id == "" or block_id == "air" or not block_defs.has(block_id):
-			continue
-		var world_pos: Vector3i = pos
-		var local_center: Vector3 = Vector3(
-			world_pos.x - cx * CHUNK_SIZE,
-			world_pos.y,
-			world_pos.z - cz * CHUNK_SIZE
-		)
-		var block_data: Dictionary = block_defs[block_id]
-		var fallback_color: Color = block_data.get("color", Color.WHITE)
-		var alpha: float = float(block_data.get("alpha", 1.0))
-		var transparent: bool = bool(block_data.get("transparent", false))
-		var foliage: bool = bool(block_data.get("foliage", false))
-		var is_plant: bool = bool(block_data.get("plant", false))
-		if is_plant:
-			var texture_path: String = block_data.get("texture", "")
-			var material_key: String = "%s|%s|%.3f|%s|%s" % [texture_path, fallback_color.to_html(), alpha, str(transparent), str(foliage)]
-			if not surface_builders.has(material_key):
-				surface_builders[material_key] = {
-					"texture_path": texture_path,
-					"fallback_color": fallback_color,
-					"alpha": alpha,
-					"transparent": transparent,
-					"foliage": foliage,
-					"vertices": [],
-					"normals": [],
-					"uvs": [],
-					"colors": [],
-					"indices": []
-				}
-			_append_chunk_plant(surface_builders[material_key], local_center, world_pos, block_id)
-		else:
-			for face_name in ["north", "south", "east", "west", "top", "bottom"]:
-				var face_offset: Vector3i = _face_offset(face_name)
-				if not _is_block_face_visible(world_pos, face_offset, block_id):
-					continue
-				var texture_path: String = _block_texture_for_face(block_data, face_name)
-				var material_key: String = "%s|%s|%.3f|%s|%s" % [texture_path, fallback_color.to_html(), alpha, str(transparent), str(foliage)]
-				if not surface_builders.has(material_key):
-					surface_builders[material_key] = {
-						"texture_path": texture_path,
-						"fallback_color": fallback_color,
-						"alpha": alpha,
-						"transparent": transparent,
-						"foliage": foliage,
-						"vertices": [],
-						"normals": [],
-						"uvs": [],
-						"colors": [],
-						"indices": []
-					}
-				_append_chunk_face(surface_builders[material_key], face_name, local_center, world_pos, block_id)
-
-	if surface_builders.is_empty():
-		return
-
-	var mesh: ArrayMesh = ArrayMesh.new()
-	for material_key in surface_builders.keys():
-		var builder: Dictionary = surface_builders[material_key]
-		var arrays: Array = []
-		arrays.resize(Mesh.ARRAY_MAX)
-		arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array(builder["vertices"])
-		arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array(builder["normals"])
-		arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array(builder["uvs"])
-		arrays[Mesh.ARRAY_COLOR] = PackedColorArray(builder["colors"])
-		arrays[Mesh.ARRAY_INDEX] = PackedInt32Array(builder["indices"])
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		var surface_index: int = mesh.get_surface_count() - 1
-		mesh.surface_set_material(
-			surface_index,
-			_material_for_texture(
-				str(builder["texture_path"]),
-				builder["fallback_color"],
-				float(builder.get("alpha", 1.0)),
-				bool(builder.get("transparent", false)),
-				bool(builder.get("foliage", false))
-			)
-		)
-
-	var mesh_instance: MeshInstance3D = MeshInstance3D.new()
-	mesh_instance.name = "ChunkMesh"
-	mesh_instance.mesh = mesh
-	chunk.add_child(mesh_instance)
-
-func _append_chunk_face(builder: Dictionary, face_name: String, local_center: Vector3, world_pos: Vector3i, block_id: String) -> void:
-	var vertices: PackedVector3Array = _face_vertices(face_name)
-	var normal_offset: Vector3i = _face_offset(face_name)
-	var normal: Vector3 = Vector3(normal_offset.x, normal_offset.y, normal_offset.z)
-	var uvs: PackedVector2Array = _face_uvs_for_block(face_name, block_id, world_pos)
-	var first_index: int = builder["vertices"].size()
-	var ao_values: Array = []
-	var alpha: float = float(builder.get("alpha", 1.0))
-	for vertex in vertices:
-		var ao: float = _vertex_ao_for_face(world_pos, face_name, vertex)
-		ao_values.append(ao)
-		builder["vertices"].append(local_center + vertex)
-		builder["normals"].append(normal)
-		builder["colors"].append(Color(ao, ao, ao, alpha))
-	for uv in uvs:
-		builder["uvs"].append(uv)
-	if float(ao_values[0]) + float(ao_values[2]) > float(ao_values[1]) + float(ao_values[3]):
-		builder["indices"].append_array([
-			first_index,
-			first_index + 1,
-			first_index + 3,
-			first_index + 1,
-			first_index + 2,
-			first_index + 3
-		])
-	else:
-		builder["indices"].append_array([
-			first_index,
-			first_index + 1,
-			first_index + 2,
-			first_index,
-			first_index + 2,
-			first_index + 3
-		])
-
-func _append_chunk_plant(builder: Dictionary, local_center: Vector3, _world_pos: Vector3i, _block_id: String) -> void:
-	var height: float = 0.8
-	var p1_verts: PackedVector3Array = PackedVector3Array([
-		Vector3(-0.5, -0.5, -0.5),
-		Vector3(0.5, -0.5, 0.5),
-		Vector3(0.5, -0.5 + height, 0.5),
-		Vector3(-0.5, -0.5 + height, -0.5)
-	])
-	var p1_normal: Vector3 = Vector3(-0.7071, 0.0, 0.7071)
-	
-	var p2_verts: PackedVector3Array = PackedVector3Array([
-		Vector3(-0.5, -0.5, 0.5),
-		Vector3(0.5, -0.5, -0.5),
-		Vector3(0.5, -0.5 + height, -0.5),
-		Vector3(-0.5, -0.5 + height, 0.5)
-	])
-	var p2_normal: Vector3 = Vector3(0.7071, 0.0, 0.7071)
-
-	var uvs: PackedVector2Array = PackedVector2Array([
-		Vector2(0, 1),
-		Vector2(1, 1),
-		Vector2(1, 0),
-		Vector2(0, 0)
-	])
-	
-	var alpha: float = float(builder.get("alpha", 1.0))
-
-	# Plane 1
-	var first_index: int = builder["vertices"].size()
-	for i in range(4):
-		builder["vertices"].append(local_center + p1_verts[i])
-		builder["normals"].append(p1_normal)
-		builder["colors"].append(Color(1.0, 1.0, 1.0, alpha))
-		builder["uvs"].append(uvs[i])
-	builder["indices"].append_array([
-		first_index,
-		first_index + 1,
-		first_index + 2,
-		first_index,
-		first_index + 2,
-		first_index + 3
-	])
-
-	# Plane 2
-	first_index = builder["vertices"].size()
-	for i in range(4):
-		builder["vertices"].append(local_center + p2_verts[i])
-		builder["normals"].append(p2_normal)
-		builder["colors"].append(Color(1.0, 1.0, 1.0, alpha))
-		builder["uvs"].append(uvs[i])
-	builder["indices"].append_array([
-		first_index,
-		first_index + 1,
-		first_index + 2,
-		first_index,
-		first_index + 2,
-		first_index + 3
-	])
+	if voxel_world != null:
+		voxel_world.set_base_block(pos, block_id)
 
 func _face_vertices(face_name: String) -> PackedVector3Array:
 	match face_name:
@@ -2132,22 +1923,6 @@ func _face_vertices(face_name: String) -> PackedVector3Array:
 		Vector3(-0.5, -0.5, -0.5)
 	])
 
-func _face_uvs_for_block(face_name: String, block_id: String, world_pos: Vector3i) -> PackedVector2Array:
-	var base_uvs: PackedVector2Array = _face_uvs(face_name)
-	if face_name == "top" and block_defs.has(block_id):
-		var block_data: Dictionary = block_defs[block_id]
-		if bool(block_data.get("random_top_rotation", false)):
-			var roll: float = _hash01(world_pos.x, world_pos.y, world_pos.z, 909)
-			var rotation: int = int(floor(roll * 4.0))
-			rotation = clamp(rotation, 0, 3)
-			if rotation > 0:
-				var rotated: PackedVector2Array = PackedVector2Array()
-				rotated.resize(4)
-				for i in range(4):
-					rotated[i] = base_uvs[(i + rotation) % 4]
-				return rotated
-	return base_uvs
-
 func _face_uvs(face_name: String) -> PackedVector2Array:
 	if face_name in ["north", "south", "east", "west"]:
 		return PackedVector2Array([
@@ -2177,19 +1952,8 @@ func _face_offset(face_name: String) -> Vector3i:
 			return Vector3i(0, 1, 0)
 	return Vector3i(0, -1, 0)
 
-func _is_block_face_visible(pos: Vector3i, offset: Vector3i, block_id: String) -> bool:
-	if offset == Vector3i(0, -1, 0) and block_id == "bedrock":
-		return false
-	var neighbor_id: String = str(blocks.get(pos + offset, ""))
-	if _is_foliage_block_id(block_id) and _is_foliage_block_id(neighbor_id):
-		return false
-	if _is_transparent_block_id(neighbor_id):
-		return true
-	return not _is_solid_block_at(pos + offset)
-
 func _is_solid_block_at(pos: Vector3i) -> bool:
-	var block_id: String = str(blocks.get(pos, ""))
-	return _is_solid_block_id(block_id)
+	return voxel_world != null and _is_solid_block_id(voxel_world.get_block_id(pos))
 
 func _is_solid_block_id(block_id: String) -> bool:
 	if block_id == "" or block_id == "air" or not block_defs.has(block_id):
@@ -2203,48 +1967,11 @@ func _is_plant_block_id(block_id: String) -> bool:
 	var block_data: Dictionary = block_defs[block_id]
 	return bool(block_data.get("plant", false))
 
-func _is_transparent_block_id(block_id: String) -> bool:
-	if block_id == "" or block_id == "air" or not block_defs.has(block_id):
-		return false
-	var block_data: Dictionary = block_defs[block_id]
-	return bool(block_data.get("transparent", false)) or float(block_data.get("alpha", 1.0)) < 0.99
-
 func _is_foliage_block_id(block_id: String) -> bool:
 	if block_id == "" or block_id == "air" or not block_defs.has(block_id):
 		return false
 	var block_data: Dictionary = block_defs[block_id]
 	return bool(block_data.get("foliage", false))
-
-func _vertex_ao_for_face(pos: Vector3i, face_name: String, vertex: Vector3) -> float:
-	if not voxel_ao_enabled:
-		return 1.0
-	var dirs: Array = _ao_dirs_for_vertex(face_name, vertex)
-	var side_a_offset: Vector3i = dirs[0]
-	var side_b_offset: Vector3i = dirs[1]
-	var side_a: bool = _is_ao_occluder_at(pos + side_a_offset)
-	var side_b: bool = _is_ao_occluder_at(pos + side_b_offset)
-	var corner: bool = _is_ao_occluder_at(pos + side_a_offset + side_b_offset)
-	var occluders: int = (1 if side_a else 0) + (1 if side_b else 0) + (1 if corner else 0)
-	var level: int = 0 if side_a and side_b else 3 - occluders
-	var brightness: Array = [0.72, 0.82, 0.92, 1.0]
-	return float(brightness[level])
-
-func _is_ao_occluder_at(pos: Vector3i) -> bool:
-	var block_id: String = str(blocks.get(pos, ""))
-	return _is_solid_block_id(block_id) and not _is_transparent_block_id(block_id)
-
-func _ao_dirs_for_vertex(face_name: String, vertex: Vector3) -> Array:
-	var sx: int = 1 if vertex.x > 0.0 else -1
-	var sy: int = 1 if vertex.y > 0.0 else -1
-	var sz: int = 1 if vertex.z > 0.0 else -1
-	match face_name:
-		"north", "south":
-			return [Vector3i(sx, 0, 0), Vector3i(0, sy, 0)]
-		"east", "west":
-			return [Vector3i(0, 0, sz), Vector3i(0, sy, 0)]
-		"top", "bottom":
-			return [Vector3i(sx, 0, 0), Vector3i(0, 0, sz)]
-	return [Vector3i.ZERO, Vector3i.ZERO]
 
 func _block_mesh(block_id: String) -> Mesh:
 	if block_item_meshes.has(block_id):
@@ -2361,159 +2088,48 @@ func _block_mesh(block_id: String) -> Mesh:
 	block_item_meshes[block_id] = mesh
 	return mesh
 
-func _queue_chunk_mesh_update(cx: int, cz: int) -> void:
-	var c_key: Vector2i = Vector2i(cx, cz)
-	if dirty_chunk_keys.has(c_key):
-		return
-	dirty_chunk_keys[c_key] = true
-	dirty_chunk_queue.append(c_key)
-
-func _process_dirty_chunk_meshes(max_chunks: int) -> void:
-	var processed: int = 0
-	while processed < max_chunks and not dirty_chunk_queue.is_empty():
-		var c_key = dirty_chunk_queue.pop_front()
-		if not (c_key is Vector2i):
+func _remove_block(pos: Vector3i):
+	if voxel_world == null:
+		return EditResultScript.rejected("world_unavailable", pos)
+	var block_id: String = voxel_world.get_block_id(pos)
+	if block_id == "":
+		return EditResultScript.rejected("already_air", pos)
+	var removal_positions: Array[Vector3i] = VoxelDependencyResolverScript.collect_removal_positions(voxel_world, pos, block_defs)
+	var removed: Array = []
+	var affected: Dictionary = {}
+	for removal_pos in removal_positions:
+		var removed_id: String = voxel_world.get_block_id(removal_pos)
+		if not voxel_world.remove_block(removal_pos):
+			if removal_pos == pos:
+				return EditResultScript.rejected("locked_or_unbreakable", pos, block_id)
 			continue
-		if not dirty_chunk_keys.has(c_key):
-			continue
-		_update_chunk_mesh(c_key.x, c_key.y)
-		processed += 1
+		if removed_id == "torch" and light_registry != null:
+			light_registry.unregister_torch(removal_pos)
+		removed.append({"pos": removal_pos, "block_id": removed_id})
+		for section in voxel_world.get_affected_sections(removal_pos): affected[section] = true
+	if removed.is_empty():
+		return EditResultScript.rejected("locked_or_unbreakable", pos, block_id)
+	if voxel_sections != null: voxel_sections.queue_sections(affected.keys(), true)
+	cached_target_physics_frame = -1
+	var result = EditResultScript.accepted(pos, block_id)
+	result.removed_blocks = removed
+	result.affected_sections = affected.keys()
+	return result
 
-func _refresh_chunk_for_block(pos: Vector3i) -> void:
-	var c_pos: Vector2i = _get_chunk_coords(pos)
-	_queue_chunk_mesh_update(c_pos.x, c_pos.y)
 
-func _refresh_chunks_for_block_and_neighbors(pos: Vector3i) -> void:
-	var chunks_to_update: Dictionary = {}
-	var c_pos: Vector2i = _get_chunk_coords(pos)
-	chunks_to_update[c_pos] = true
-
-	var local_x: int = pos.x - c_pos.x * CHUNK_SIZE
-	var local_z: int = pos.z - c_pos.y * CHUNK_SIZE
-	if local_x <= 0:
-		chunks_to_update[Vector2i(c_pos.x - 1, c_pos.y)] = true
-	if local_x >= CHUNK_SIZE - 1:
-		chunks_to_update[Vector2i(c_pos.x + 1, c_pos.y)] = true
-	if local_z <= 0:
-		chunks_to_update[Vector2i(c_pos.x, c_pos.y - 1)] = true
-	if local_z >= CHUNK_SIZE - 1:
-		chunks_to_update[Vector2i(c_pos.x, c_pos.y + 1)] = true
-
-	for chunk_coord in chunks_to_update.keys():
-		_queue_chunk_mesh_update(chunk_coord.x, chunk_coord.y)
-
-func _create_collision_node(pos: Vector3i, block_id: String) -> void:
-	if not block_defs.has(block_id):
+func _queue_voxel_sections_for_edit(pos: Vector3i) -> void:
+	if voxel_world == null or voxel_sections == null:
 		return
-	if not _is_solid_block_id(block_id) and not _is_plant_block_id(block_id):
-		_remove_block_node(pos)
-		return
-	if block_nodes.has(pos):
-		_remove_block_node(pos)
-
-	var body: StaticBody3D = StaticBody3D.new()
-	body.name = "Collision_%s_%s_%s" % [pos.x, pos.y, pos.z]
-	body.position = Vector3(pos.x, pos.y, pos.z)
-	body.set_meta("block_pos", pos)
-	body.set_meta("block_id", block_id)
-	
-	if _is_plant_block_id(block_id):
-		body.collision_layer = 2
-		body.collision_mask = 0
-	else:
-		body.collision_layer = 1
-		body.collision_mask = 1
-
-	var collision: CollisionShape3D = CollisionShape3D.new()
-	var shape: BoxShape3D = BoxShape3D.new()
-	shape.size = Vector3.ONE
-	collision.shape = shape
-	body.add_child(collision)
-
-	world_root.add_child(body)
-	block_nodes[pos] = body
-
-func _update_active_collisions(player_pos: Vector3) -> void:
-	if world_root == null or not is_instance_valid(world_root):
-		return
-	var p_block: Vector3i = Vector3i(
-		int(round(player_pos.x)),
-		int(round(player_pos.y)),
-		int(round(player_pos.z))
-	)
-	var desired_collisions: Dictionary = {}
-	
-	for x in range(p_block.x - COLLISION_RADIUS, p_block.x + COLLISION_RADIUS + 1):
-		for z in range(p_block.z - COLLISION_RADIUS, p_block.z + COLLISION_RADIUS + 1):
-			for y in range(p_block.y - COLLISION_RADIUS, p_block.y + COLLISION_RADIUS + 1):
-				var pos: Vector3i = Vector3i(x, y, z)
-				if blocks.has(pos):
-					var block_id: String = blocks[pos]
-					if _is_solid_block_id(block_id) or _is_plant_block_id(block_id):
-						desired_collisions[pos] = block_id
-						
-	for pos in desired_collisions.keys():
-		if not block_nodes.has(pos):
-			_create_collision_node(pos, desired_collisions[pos])
-			
-	var existing_positions: Array = block_nodes.keys()
-	for pos in existing_positions:
-		if not desired_collisions.has(pos):
-			_remove_block_node(pos)
-
-func _refresh_block_and_neighbors(pos: Vector3i) -> void:
-	_refresh_chunks_for_block_and_neighbors(pos)
-	_refresh_collision_for_block(pos)
-
-func _refresh_collision_for_block(pos: Vector3i) -> void:
-	if player == null or not is_instance_valid(player) or not player.is_inside_tree():
-		return
-	var p_block: Vector3i = Vector3i(
-		int(round(player.global_position.x)),
-		int(round(player.global_position.y)),
-		int(round(player.global_position.z))
-	)
-	if abs(pos.x - p_block.x) > COLLISION_RADIUS or abs(pos.y - p_block.y) > COLLISION_RADIUS or abs(pos.z - p_block.z) > COLLISION_RADIUS:
-		_remove_block_node(pos)
-		return
-	var block_id: String = str(blocks.get(pos, ""))
-	if not _is_solid_block_id(block_id) and not _is_plant_block_id(block_id):
-		_remove_block_node(pos)
-	elif not block_nodes.has(pos):
-		_create_collision_node(pos, block_id)
-
-func _remove_block_node(pos: Vector3i) -> void:
-	if block_nodes.has(pos):
-		var node: Node = block_nodes[pos]
-		if is_instance_valid(node):
-			node.queue_free()
-		block_nodes.erase(pos)
-
-func _remove_block(pos: Vector3i) -> void:
-	if blocks.has(pos):
-		blocks.erase(pos)
-	var c_pos: Vector2i = _get_chunk_coords(pos)
-	if blocks_in_chunk.has(c_pos):
-		blocks_in_chunk[c_pos].erase(pos)
-		if blocks_in_chunk[c_pos].is_empty():
-			blocks_in_chunk.erase(c_pos)
-			
-	if tracking_world_changes:
-		var key: String = _pos_key(pos)
-		changed_blocks.erase(key)
-		removed_blocks[key] = true
-	_remove_block_node(pos)
-	
-	# Rebuild chunks exactly once
-	_refresh_chunks_for_block_and_neighbors(pos)
+	voxel_sections.queue_sections(voxel_world.get_affected_sections(pos), true)
+	cached_target_physics_frame = -1
 
 func _handle_block_breaking(delta: float) -> void:
-	var hit: Dictionary = _get_target_block()
-	if hit.is_empty():
+	var hit = _get_target_block()
+	if hit == null or not hit.is_valid():
 		_cancel_block_breaking()
 		return
-	var pos: Vector3i = hit["pos"]
-	var block_id: String = blocks.get(pos, "")
+	var pos: Vector3i = hit.pos
+	var block_id: String = voxel_world.get_block_id(pos) if voxel_world != null else ""
 	if block_id == "":
 		_cancel_block_breaking()
 		return
@@ -2534,28 +2150,43 @@ func _handle_block_breaking(delta: float) -> void:
 	
 	breaking_progress += (delta * break_speed) / base_break_time
 	_update_breaking_visuals(breaking_progress)
+	if voxel_debris != null:
+		voxel_debris.emit_mining(pos, hit.normal, block_id, delta)
 	if player != null:
 		player.play_mine_swing(breaking_progress)
 	
 	if breaking_progress >= 1.0:
-		_complete_block_breaking(pos, block_id, block_data)
+		_complete_block_breaking(pos, hit.normal, block_id, block_data)
 
 func _cancel_block_breaking() -> void:
+	if voxel_debris != null:
+		voxel_debris.stop_mining()
 	if breaking_pos != Vector3i(-999, -999, -999):
 		_clear_breaking_visuals()
 		breaking_pos = Vector3i(-999, -999, -999)
 		breaking_progress = 0.0
 
-func _complete_block_breaking(pos: Vector3i, block_id: String, block_data: Dictionary) -> void:
+func _complete_block_breaking(pos: Vector3i, normal: Vector3i, block_id: String, block_data: Dictionary) -> void:
 	_clear_breaking_visuals()
+	if voxel_debris != null:
+		voxel_debris.stop_mining()
 	breaking_pos = Vector3i(-999, -999, -999)
 	breaking_progress = 0.0
 	
 	var selected_item: String = _get_selected_hotbar_item()
-	if selected_item == "manita_pickaxe":
+	var uses_manita_pickaxe: bool = selected_item == "manita_pickaxe"
+	if uses_manita_pickaxe:
 		if mana < MANITA_PICKAXE_MANA_COST:
 			_message("Mana insuficiente para usar a Picareta de Manita.")
 			return
+
+	var edit = _remove_block(pos)
+	if not bool(edit.succeeded):
+		return
+	if voxel_debris != null:
+		voxel_debris.emit_burst(pos, normal, block_id)
+
+	if uses_manita_pickaxe:
 		mana -= MANITA_PICKAXE_MANA_COST
 		manita_pickaxe_xp += 1
 		if manita_pickaxe_xp >= manita_pickaxe_level * 10:
@@ -2563,37 +2194,40 @@ func _complete_block_breaking(pos: Vector3i, block_id: String, block_data: Dicti
 			manita_pickaxe_level += 1
 			_message("Picareta de Manita subiu para nivel %s." % manita_pickaxe_level)
 
-	var drop_id: String = block_data.get("drop", "")
-	_remove_block(pos)
-	if block_id == "chest":
-		chest_inventories.erase(pos)
-	if drop_id != "":
-		# Spawn floating dropped item entity
-		var spawn_pos: Vector3 = Vector3(pos) + Vector3(0.0, 0.25, 0.0)
-		var spawn_vel: Vector3 = Vector3(randf_range(-1.0, 1.0), 2.5, randf_range(-1.0, 1.0))
-		_spawn_dropped_item(drop_id, 1, spawn_pos, spawn_vel)
+	var spawned_any_drop: bool = false
+	for raw_removed in edit.removed_blocks:
+		var removed: Dictionary = raw_removed as Dictionary
+		var removed_pos: Vector3i = removed.get("pos", pos)
+		var removed_id: String = str(removed.get("block_id", ""))
+		var removed_data: Dictionary = block_defs.get(removed_id, {}) as Dictionary
+		var drop_id: String = str(removed_data.get("drop", ""))
+		if removed_id == "chest": _erase_chest_inventory(removed_pos)
+		if drop_id != "":
+			var spawn_pos: Vector3 = Vector3(removed_pos) + Vector3(0.0, 0.25, 0.0)
+			var spawn_vel: Vector3 = Vector3(randf_range(-1.0, 1.0), 2.5, randf_range(-1.0, 1.0))
+			_spawn_dropped_item(drop_id, 1, spawn_pos, spawn_vel)
+			spawned_any_drop = true
 	if player != null:
 		player.play_break_finish()
-	if drop_id != "" or block_id == "chest" or selected_item == "manita_pickaxe":
+	if spawned_any_drop or block_id == "chest" or selected_item == "manita_pickaxe":
 		_update_all_ui()
 
 func _create_breaking_visuals(pos: Vector3i) -> void:
-	_clear_breaking_visuals()
-	
-	breaking_overlay = MeshInstance3D.new()
-	var box_mesh = BoxMesh.new()
-	box_mesh.size = Vector3(1.01, 1.01, 1.01)
-	breaking_overlay.mesh = box_mesh
-	
-	var mat = StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.0)
-	mat.roughness = 1.0
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	breaking_overlay.material_override = mat
-	world_root.add_child(breaking_overlay)
+	if breaking_overlay == null or not is_instance_valid(breaking_overlay):
+		breaking_overlay = MeshInstance3D.new()
+		var box_mesh = BoxMesh.new()
+		box_mesh.size = Vector3(1.01, 1.01, 1.01)
+		breaking_overlay.mesh = box_mesh
+		var mat = StandardMaterial3D.new()
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color(1.0, 1.0, 1.0, 0.0)
+		mat.roughness = 1.0
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		breaking_overlay.material_override = mat
+		world_root.add_child(breaking_overlay)
+	breaking_overlay.visible = true
 	breaking_overlay.position = Vector3(pos)
 
 func _update_breaking_visuals(progress: float) -> void:
@@ -2631,19 +2265,18 @@ func _breaking_crack_texture(stage: int) -> Texture2D:
 
 func _clear_breaking_visuals() -> void:
 	if breaking_overlay != null and is_instance_valid(breaking_overlay):
-		breaking_overlay.queue_free()
-		breaking_overlay = null
+		breaking_overlay.visible = false
 
 func _update_target_outline() -> void:
 	if not game_started or _is_menu_open() or inventory_panel.visible or chest_panel.visible:
 		_clear_target_outline()
 		return
-	var hit: Dictionary = _get_target_block()
-	if hit.is_empty():
+	var hit = _get_target_block()
+	if hit == null or not hit.is_valid():
 		_clear_target_outline()
 		return
-	var pos: Vector3i = hit["pos"]
-	if not blocks.has(pos):
+	var pos: Vector3i = hit.pos
+	if voxel_world == null or not voxel_world.has_block(pos):
 		_clear_target_outline()
 		return
 	if target_outline != null and is_instance_valid(target_outline) and pos == target_outline_pos:
@@ -2651,21 +2284,21 @@ func _update_target_outline() -> void:
 	_create_target_outline(pos)
 
 func _create_target_outline(pos: Vector3i) -> void:
-	_clear_target_outline()
-	target_outline = MeshInstance3D.new()
-	target_outline.mesh = _make_target_outline_mesh()
-	var mat: StandardMaterial3D = StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color.BLACK
-	target_outline.material_override = mat
-	world_root.add_child(target_outline)
+	if target_outline == null or not is_instance_valid(target_outline):
+		target_outline = MeshInstance3D.new()
+		target_outline.mesh = _make_target_outline_mesh()
+		var mat: StandardMaterial3D = StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color.BLACK
+		target_outline.material_override = mat
+		world_root.add_child(target_outline)
+	target_outline.visible = true
 	target_outline.position = Vector3(pos)
 	target_outline_pos = pos
 
 func _clear_target_outline() -> void:
 	if target_outline != null and is_instance_valid(target_outline):
-		target_outline.queue_free()
-	target_outline = null
+		target_outline.visible = false
 	target_outline_pos = Vector3i(-999, -999, -999)
 
 func _make_target_outline_mesh() -> ArrayMesh:
@@ -2779,13 +2412,70 @@ func _drop_selected_item() -> void:
 	_remove_from_slot(inventory_slots, selected_hotbar_index, 1)
 	_update_all_ui()
 
-func _use_or_place_target() -> bool:
-	var hit: Dictionary = _get_target_block()
+func _interaction_physics_hit() -> Dictionary:
+	if player == null:
+		return {}
+	var query := PhysicsRayQueryParameters3D.create(
+		player.get_interaction_ray_start(),
+		player.get_interaction_ray_end(),
+		3
+	)
+	query.exclude = [player]
+	return get_world_3d().direct_space_state.intersect_ray(query)
+
+func _handle_primary_click() -> bool:
+	var hit: Dictionary = _interaction_physics_hit()
 	if hit.is_empty():
 		return false
+	var collider: Object = hit.get("collider")
+	if collider is Node and (collider as Node).is_in_group("creature"):
+		(collider as Node).take_damage(BlockCatalog.attack_damage(_get_selected_hotbar_item()))
+		_cancel_block_breaking()
+		player.play_attack_swing()
+		return true
+	if collider is Node and (collider as Node).is_in_group("thumbstone"):
+		(collider as Node).collect()
+		_cancel_block_breaking()
+		player.play_attack_swing()
+		return true
+	return false
 
-	var pos: Vector3i = hit["pos"]
-	var block_id: String = blocks.get(pos, "")
+func _collect_target_thumbstone() -> bool:
+	var hit: Dictionary = _interaction_physics_hit()
+	if hit.is_empty():
+		return false
+	var collider: Object = hit.get("collider")
+	if collider is Node and (collider as Node).is_in_group("thumbstone"):
+		(collider as Node).collect()
+		player.play_place_swing()
+		return true
+	return false
+
+func _collect_nearby_thumbstone() -> bool:
+	if player == null:
+		return false
+	var nearest: Node = null
+	var nearest_distance: float = 2.0
+	for raw_stone in thumbstones:
+		if not is_instance_valid(raw_stone):
+			continue
+		var stone: Node = raw_stone
+		var distance: float = player.global_position.distance_to(stone.global_position + Vector3.UP * 0.6)
+		if distance < nearest_distance:
+			nearest = stone
+			nearest_distance = distance
+	if nearest == null:
+		return false
+	nearest.collect()
+	return true
+
+func _use_or_place_target() -> bool:
+	var hit = _get_target_block()
+	if hit == null or not hit.is_valid():
+		return false
+
+	var pos: Vector3i = hit.pos
+	var block_id: String = voxel_world.get_block_id(pos) if voxel_world != null else ""
 	var block_data: Dictionary = block_defs.get(block_id, {})
 	var interact: String = block_data.get("interact", "")
 	if interact == "chest":
@@ -2805,54 +2495,56 @@ func _use_or_place_target() -> bool:
 	var item_data: Dictionary = item_defs.get(selected_item, {})
 	var place_block: String = item_data.get("place_block", "")
 
-	var normal: Vector3 = hit["normal"]
+	var normal: Vector3 = Vector3(hit.normal)
 	var offset: Vector3i = Vector3i(int(round(normal.x)), int(round(normal.y)), int(round(normal.z)))
 	var target_pos: Vector3i = pos + offset
 	if place_block == "":
 		_message("Item selecionado nao pode ser colocado.")
 		return false
-	if blocks.has(target_pos):
+	if voxel_world == null or voxel_world.has_block(target_pos):
 		return false
-	if not _is_inside_current_biome(target_pos):
+	if voxel_world == null or not voxel_world.is_buildable(target_pos):
 		_message("Este MVP esta limitado ao Bioma 1 de 100x100.")
 		return false
 	if _would_block_player(target_pos):
 		_message("Nao da para colocar bloco dentro do jogador.")
 		return false
-	if not _remove_from_slot(inventory_slots, selected_hotbar_index, 1):
+	if _slot_count(inventory_slots[selected_hotbar_index]) <= 0:
 		_message("Sem %s no slot selecionado." % _item_name(selected_item))
 		return false
 
-	_set_block(target_pos, place_block)
+	var edit = _set_block(target_pos, place_block)
+	if not bool(edit.succeeded):
+		if str(edit.reason) == "missing_solid_support": _message("Plantas precisam de um bloco solido abaixo.")
+		return false
+	_remove_from_slot(inventory_slots, selected_hotbar_index, 1)
 	if place_block == "chest":
-		chest_inventories[target_pos] = _make_slots(CHEST_SLOT_COUNT)
+		_set_chest_inventory(target_pos, _make_slots(CHEST_SLOT_COUNT))
 	if player != null:
 		player.play_place_swing()
 	_update_all_ui()
 	return true
 
-func _get_target_block() -> Dictionary:
-	if player == null:
-		return {}
-	var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(
+func _get_target_block():
+	return cached_target
+
+
+func _update_cached_target() -> void:
+	if player == null or voxel_world == null:
+		cached_target = null
+		return
+	var physics_frame: int = Engine.get_physics_frames()
+	if cached_target_physics_frame == physics_frame:
+		return
+	cached_target_physics_frame = physics_frame
+	cached_target = voxel_world.raycast_hit(
 		player.get_interaction_ray_start(),
-		player.get_interaction_ray_end()
+		player.get_aim_direction(),
+		player.block_reach
 	)
-	query.exclude = [player]
-	query.collision_mask = 1 | 2
-	var result: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
-	if result.is_empty():
-		return {}
-	var collider: Object = result.get("collider", null)
-	if collider == null or not collider.has_meta("block_pos"):
-		return {}
-	return {
-		"pos": collider.get_meta("block_pos"),
-		"normal": result.get("normal", Vector3.ZERO)
-	}
 
 func _is_inside_current_biome(pos: Vector3i) -> bool:
-	return pos.x >= BIOME_MIN_X and pos.x <= BIOME_MAX_X and pos.z >= BIOME_MIN_Z and pos.z <= BIOME_MAX_Z
+	return voxel_world != null and voxel_world.is_inside_unlocked_biome(pos)
 
 func _would_block_player(pos: Vector3i) -> bool:
 	var block_top: float = float(pos.y) + 0.5
@@ -2895,8 +2587,8 @@ func _open_chest(pos: Vector3i) -> void:
 	_return_craft_slots_to_inventory()
 	current_chest_pos = pos
 	has_current_chest = true
-	if not chest_inventories.has(pos):
-		chest_inventories[pos] = _make_slots(CHEST_SLOT_COUNT)
+	if not _has_chest_inventory(pos):
+		_set_chest_inventory(pos, _make_slots(CHEST_SLOT_COUNT))
 	chest_panel.visible = true
 	inventory_panel.visible = false
 	_update_chest_panel()
@@ -3155,9 +2847,8 @@ func _get_slots_for_type(slot_type: String) -> Array:
 		"craft":
 			return craft_slots
 		"chest":
-			if has_current_chest and chest_inventories.has(current_chest_pos):
-				var chest_slots: Array = chest_inventories[current_chest_pos]
-				return chest_slots
+			if has_current_chest and _has_chest_inventory(current_chest_pos):
+				return _get_chest_inventory(current_chest_pos)
 			return []
 		_:
 			return []
@@ -3170,7 +2861,7 @@ func _store_slots_for_type(slot_type: String, slots: Array) -> void:
 			craft_slots = slots
 		"chest":
 			if has_current_chest:
-				chest_inventories[current_chest_pos] = slots
+				_set_chest_inventory(current_chest_pos, slots)
 
 func _try_craft() -> void:
 	_take_craft_output()
@@ -3503,26 +3194,28 @@ func _get_selected_hotbar_count() -> int:
 	return _slot_count(slot)
 
 func _save_game_state() -> bool:
-	if not game_started:
+	if not game_started or voxel_world == null:
 		return false
 	_return_cursor_stack_to_inventory()
 	_return_craft_slots_to_inventory()
 	_cancel_slot_drags()
 
 	var save_data: Dictionary = {
-		"version": 1,
-		"world_seed": WORLD_SEED,
+		"format": "trumancraft_save_v4",
+		"version": 4,
+		"terrain_hash": active_terrain_hash,
+		"structure_registry_hash": active_registry_hash,
+		"world": voxel_world.build_save_data(),
 		"player_position": _vector3_to_array(player.global_position),
 		"player_rotation_y": player.get_camera_yaw(),
 		"camera_pitch": player.get_camera_pitch(),
 		"inventory_slots": inventory_slots,
+		"player_health": player.health,
+		"thumbstones": _thumbstones_to_data(),
 		"selected_hotbar_index": selected_hotbar_index,
 		"mana": mana,
 		"manita_pickaxe_xp": manita_pickaxe_xp,
 		"manita_pickaxe_level": manita_pickaxe_level,
-		"changed_blocks": changed_blocks,
-		"removed_blocks": _removed_block_keys(),
-		"chest_inventories": _serialize_chest_inventories(),
 		"time_of_day": time_of_day,
 		"day_count": day_count
 	}
@@ -3534,25 +3227,44 @@ func _save_game_state() -> bool:
 	return true
 
 func _load_game_state() -> bool:
-	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.READ)
+	last_load_error = ""
+	if voxel_world == null:
+		last_load_error = "O mundo base V3 nao foi inicializado."
+		return false
+	var load_path: String = SAVE_PATH if FileAccess.file_exists(SAVE_PATH) else V3_SAVE_PATH
+	var file: FileAccess = FileAccess.open(load_path, FileAccess.READ)
 	if file == null:
+		last_load_error = "Nao foi possivel abrir o save."
 		return false
 	var text: String = file.get_as_text()
 	var json: JSON = JSON.new()
 	var parse_error: int = json.parse(text)
 	if parse_error != OK:
+		last_load_error = "O arquivo de save esta corrompido."
 		return false
 
 	var raw_data: Variant = json.data
 	if typeof(raw_data) != TYPE_DICTIONARY:
+		last_load_error = "O save nao contem um objeto valido."
 		return false
 	var data: Dictionary = raw_data as Dictionary
+	var format: String = str(data.get("format", ""))
+	var version: int = int(data.get("version", 0))
+	if not ((format == "trumancraft_save_v4" and version == 4) or (format == "trumancraft_save_v3" and version == 3)):
+		last_load_error = "Save incompativel: somente mundos V3 ou V4 podem ser carregados."
+		return false
+	if str(data.get("terrain_hash", "")) != active_terrain_hash or str(data.get("structure_registry_hash", "")) != active_registry_hash:
+		last_load_error = "Save incompativel com os tiles ou templates de geracao atuais."
+		return false
+	var raw_world: Variant = data.get("world", {})
+	if typeof(raw_world) != TYPE_DICTIONARY or not voxel_world.load_save_data(raw_world as Dictionary):
+		last_load_error = "Dados voxel do save sao invalidos ou usam outra paleta."
+		return false
 
-	tracking_world_changes = false
-	changed_blocks.clear()
-	removed_blocks.clear()
+	voxel_world.set_tracking_changes(false)
 
 	inventory_slots = _slots_from_data(data.get("inventory_slots", []), INVENTORY_SLOT_COUNT)
+	pending_player_health = clampf(float(data.get("player_health", PLAYER_MAX_HEALTH)), 0.01, PLAYER_MAX_HEALTH)
 	craft_slots = _make_slots(4)
 	cursor_stack = _empty_slot()
 	selected_hotbar_index = clamp(int(data.get("selected_hotbar_index", 0)), 0, HOTBAR_SLOT_COUNT - 1)
@@ -3561,46 +3273,16 @@ func _load_game_state() -> bool:
 	manita_pickaxe_level = max(1, int(data.get("manita_pickaxe_level", 1)))
 	time_of_day = clamp(float(data.get("time_of_day", 8.0)), 0.0, 24.0)
 	day_count = max(1, int(data.get("day_count", 1)))
-
-	var raw_removed: Variant = data.get("removed_blocks", [])
-	if typeof(raw_removed) == TYPE_ARRAY:
-		var removed_list: Array = raw_removed as Array
-		for raw_key in removed_list:
-			var key: String = str(raw_key)
-			removed_blocks[key] = true
-			_remove_block(_pos_from_key(key))
-
-	var raw_changed: Variant = data.get("changed_blocks", {})
-	if typeof(raw_changed) == TYPE_DICTIONARY:
-		var changed_data: Dictionary = raw_changed as Dictionary
-		for raw_key in changed_data.keys():
-			var key: String = str(raw_key)
-			var block_id: String = str(changed_data[raw_key])
-			if block_defs.has(block_id):
-				changed_blocks[key] = block_id
-				removed_blocks.erase(key)
-				_set_block(_pos_from_key(key), block_id)
-
-	chest_inventories.clear()
-	var raw_chests: Variant = data.get("chest_inventories", {})
-	if typeof(raw_chests) == TYPE_DICTIONARY:
-		var chest_data: Dictionary = raw_chests as Dictionary
-		for raw_key in chest_data.keys():
-			var key: String = str(raw_key)
-			var pos: Vector3i = _pos_from_key(key)
-			if blocks.get(pos, "") == "chest":
-				chest_inventories[pos] = _slots_from_data(chest_data[raw_key], CHEST_SLOT_COUNT)
-
-	for raw_key in changed_blocks.keys():
-		var changed_key: String = str(raw_key)
-		if str(changed_blocks[raw_key]) == "chest":
-			var chest_pos: Vector3i = _pos_from_key(changed_key)
-			if not chest_inventories.has(chest_pos):
-				chest_inventories[chest_pos] = _make_slots(CHEST_SLOT_COUNT)
+	for raw_pos in voxel_world.get_metadata_positions(CHEST_METADATA_KEY):
+		var chest_pos: Vector3i = raw_pos
+		if voxel_world.get_block_id(chest_pos) == "chest":
+			_set_chest_inventory(chest_pos, _slots_from_data(_get_chest_inventory(chest_pos), CHEST_SLOT_COUNT))
+		else:
+			_erase_chest_inventory(chest_pos)
 
 	loaded_game_data = data
 
-	tracking_world_changes = true
+	voxel_world.set_tracking_changes(false)
 	_update_all_ui()
 	return true
 
@@ -3611,6 +3293,7 @@ func _load_settings() -> void:
 		shadows_enabled = bool(config.get_value("video", "shadows", true))
 		ssao_enabled = bool(config.get_value("video", "ssao", true))
 		voxel_ao_enabled = bool(config.get_value("video", "voxel_ao", true))
+		performance_preset = PerformanceProfileScript.preset_from_value(config.get_value("video", "performance_preset", "high"))
 		player_skin_path = str(config.get_value("player", "skin_path", ""))
 		saved_camera_mode = clamp(int(config.get_value("player", "camera_mode", 0)), 0, 2)
 		if player_skin_path != "" and not SkinLoader.is_valid_skin_path(player_skin_path):
@@ -3622,23 +3305,35 @@ func _save_settings() -> void:
 	config.set_value("video", "shadows", shadows_enabled)
 	config.set_value("video", "ssao", ssao_enabled)
 	config.set_value("video", "voxel_ao", voxel_ao_enabled)
+	config.set_value("video", "performance_preset", PerformanceProfileScript.preset_name(performance_preset))
 	config.set_value("player", "skin_path", player_skin_path)
 	config.set_value("player", "camera_mode", saved_camera_mode)
 	config.save(SETTINGS_PATH)
 
-func _serialize_chest_inventories() -> Dictionary:
-	var result: Dictionary = {}
-	for raw_pos in chest_inventories.keys():
-		var pos: Vector3i = raw_pos
-		if blocks.get(pos, "") == "chest":
-			result[_pos_key(pos)] = chest_inventories[pos]
-	return result
+func _clear_chest_inventories() -> void:
+	if voxel_world != null:
+		voxel_world.clear_metadata(CHEST_METADATA_KEY)
 
-func _removed_block_keys() -> Array:
-	var result: Array = []
-	for raw_key in removed_blocks.keys():
-		result.append(str(raw_key))
-	return result
+
+func _has_chest_inventory(pos: Vector3i) -> bool:
+	return voxel_world != null and voxel_world.has_metadata(pos, CHEST_METADATA_KEY)
+
+
+func _get_chest_inventory(pos: Vector3i) -> Array:
+	if voxel_world == null:
+		return []
+	var raw_slots: Variant = voxel_world.get_metadata(pos, CHEST_METADATA_KEY, [])
+	return raw_slots as Array if typeof(raw_slots) == TYPE_ARRAY else []
+
+
+func _set_chest_inventory(pos: Vector3i, slots: Array) -> void:
+	if voxel_world != null:
+		voxel_world.set_metadata(pos, CHEST_METADATA_KEY, slots)
+
+
+func _erase_chest_inventory(pos: Vector3i) -> void:
+	if voxel_world != null:
+		voxel_world.erase_metadata(pos, CHEST_METADATA_KEY)
 
 func _slots_from_data(raw_value: Variant, slot_count: int) -> Array:
 	var slots: Array = _make_slots(slot_count)
@@ -3655,15 +3350,6 @@ func _slots_from_data(raw_value: Variant, slot_count: int) -> Array:
 		if item_defs.has(item_id) and item_count > 0:
 			slots[i] = {"item": item_id, "count": item_count}
 	return slots
-
-func _pos_key(pos: Vector3i) -> String:
-	return "%s,%s,%s" % [pos.x, pos.y, pos.z]
-
-func _pos_from_key(key: String) -> Vector3i:
-	var parts: PackedStringArray = key.split(",")
-	if parts.size() != 3:
-		return Vector3i.ZERO
-	return Vector3i(int(parts[0]), int(parts[1]), int(parts[2]))
 
 func _vector3_to_array(value: Vector3) -> Array:
 	return [value.x, value.y, value.z]
@@ -3721,7 +3407,10 @@ func _update_player_visual_visibility() -> void:
 func _update_status() -> void:
 	var selected_item: String = _get_selected_hotbar_item()
 	var selected_name: String = "Vazio" if selected_item == "" else _item_name(selected_item)
-	status_label.text = "Bioma 1/4: Inicio 100x100 | Mapa final: 200x200\nMana: %s/%s | Picareta Manita Nv.%s XP %s/%s\nSelecionado: %s x%s | E: craft 2x2 | F5: camera" % [
+	var current_health: float = player.health if player != null else pending_player_health
+	var next_text: String = "Bioma 1/4: Inicio 100x100 | Vida: %s/%s\nMana: %s/%s | Picareta Manita Nv.%s XP %s/%s\nSelecionado: %s x%s | E: craft 2x2 | F5: camera" % [
+		current_health,
+		PLAYER_MAX_HEALTH,
 		int(mana),
 		int(MANA_MAX),
 		manita_pickaxe_level,
@@ -3730,6 +3419,10 @@ func _update_status() -> void:
 		selected_name,
 		_get_selected_hotbar_count()
 	]
+	if next_text == last_status_text:
+		return
+	last_status_text = next_text
+	status_label.text = next_text
 
 func _update_cursor_stack_label() -> void:
 	if cursor_stack_slot == null:
@@ -3796,12 +3489,32 @@ func _update_hover_tooltip_position() -> void:
 	tooltip_panel.global_position = Vector2(max(4.0, desired_position.x), max(4.0, desired_position.y))
 
 func _update_hotbar() -> void:
-	_clear_children(hotbar_box)
+	if hotbar_box == null:
+		return
+	if hotbar_slots.size() != HOTBAR_SLOT_COUNT:
+		_clear_children(hotbar_box)
+		hotbar_slots.clear()
+		for slot_index in range(HOTBAR_SLOT_COUNT):
+			var created_slot: ItemSlot = ItemSlot.new()
+			hotbar_box.add_child(created_slot)
+			hotbar_slots.append(created_slot)
 	for i in range(HOTBAR_SLOT_COUNT):
 		var slot: Dictionary = inventory_slots[i]
-		var slot_node: ItemSlot = _make_item_slot("inventory", i, slot, Vector2(54, 54))
+		var slot_node: ItemSlot = hotbar_slots[i]
+		var item_id: String = _slot_item(slot)
+		slot_node.configure(
+			self,
+			"inventory",
+			i,
+			item_id,
+			_slot_count(slot),
+			_item_name(item_id),
+			_item_description(item_id),
+			_item_icon(item_id),
+			_item_icon_faces(item_id),
+			Vector2(54, 54)
+		)
 		slot_node.set_selected(i == selected_hotbar_index)
-		hotbar_box.add_child(slot_node)
 	_sync_held_item()
 
 func _update_inventory_panel() -> void:
@@ -3866,3 +3579,41 @@ func _clear_children(node: Node) -> void:
 func _message(text: String) -> void:
 	message_label.text = text
 	message_time = 3.5
+
+
+## Records a repeatable 30-second interactive route. Start at the Biome 1
+## spawn, press F9, then sprint, rotate the camera, mine, and place blocks as
+## usual. A second F9 ends it early and reports p95/p99 frame time.
+func _toggle_frame_benchmark() -> void:
+	if not game_started:
+		return
+	if benchmark_active:
+		_finish_frame_benchmark()
+		return
+	benchmark_active = true
+	benchmark_elapsed = 0.0
+	benchmark_samples_ms.clear()
+	_message("Benchmark iniciado: corra, gire a camera, minere e coloque blocos por 30 segundos.")
+
+
+func _update_frame_benchmark(delta: float) -> void:
+	if not benchmark_active:
+		return
+	benchmark_elapsed += delta
+	benchmark_samples_ms.append(delta * 1000.0)
+	if benchmark_elapsed >= BENCHMARK_DURATION_SECONDS:
+		_finish_frame_benchmark()
+
+
+func _finish_frame_benchmark() -> void:
+	if not benchmark_active:
+		return
+	benchmark_active = false
+	if benchmark_samples_ms.is_empty():
+		_message("Benchmark sem amostras.")
+		return
+	var ordered: Array[float] = benchmark_samples_ms.duplicate()
+	ordered.sort()
+	var p95: float = ordered[clampi(int(floor(float(ordered.size() - 1) * 0.95)), 0, ordered.size() - 1)]
+	var p99: float = ordered[clampi(int(floor(float(ordered.size() - 1) * 0.99)), 0, ordered.size() - 1)]
+	_message("Benchmark: p95 %.2f ms | p99 %.2f ms | alvo 120 FPS: 8.33 ms." % [p95, p99])

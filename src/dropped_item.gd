@@ -1,6 +1,8 @@
 extends Node3D
 class_name DroppedItem
 
+const MAX_LIFETIME_SECONDS: float = 90.0
+
 var item_id: String = ""
 var count: int = 1
 var velocity: Vector3 = Vector3.ZERO
@@ -45,6 +47,11 @@ func _create_visuals() -> void:
 
 func _process(delta: float) -> void:
 	time_alive += delta
+	if time_alive >= MAX_LIFETIME_SECONDS:
+		if main_game != null and "dropped_items" in main_game:
+			main_game.dropped_items.erase(self)
+		queue_free()
+		return
 	
 	# Apply rotation to visual if it is a 3D block (Sprite3D is billboarded)
 	if visual is MeshInstance3D:

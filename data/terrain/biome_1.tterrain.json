@@ -1,0 +1,12 @@
+{
+	"format": "trumancraft_terrain_tile",
+	"version": 2,
+	"tile_coord": [0, 0],
+	"tile_size": 100,
+	"min_surface_y": -32,
+	"max_surface_y": 96,
+	"draft_seed": 1235571,
+	"draft_only": true,
+	"cave_entrances": [],
+	"anchors": []
+}
