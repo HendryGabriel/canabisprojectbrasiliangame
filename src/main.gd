@@ -732,8 +732,8 @@ func _create_lighting() -> void:
 	sun_light = DirectionalLight3D.new()
 	sun_light.name = "Sun"
 	sun_light.rotation_degrees = Vector3(-45, 35, 0)
-	sun_light.light_energy = 1.45
-	sun_light.light_color = Color(1.0, 0.78, 0.42)
+	sun_light.light_energy = 1.3
+	sun_light.light_color = Color(1.0, 0.97, 0.9)
 	sun_light.shadow_enabled = shadows_enabled
 	sun_light.shadow_opacity = SHADOW_OPACITY
 	sun_light.shadow_bias = 0.03
@@ -746,7 +746,7 @@ func _create_lighting() -> void:
 	moon_light.name = "Moon"
 	moon_light.rotation_degrees = Vector3(45, 35, 0)
 	moon_light.light_energy = 0.0
-	moon_light.light_color = Color(0.9, 0.6, 0.32)
+	moon_light.light_color = Color(0.62, 0.70, 0.92)
 	moon_light.shadow_enabled = shadows_enabled
 	moon_light.shadow_opacity = SHADOW_OPACITY
 	moon_light.shadow_bias = 0.04
@@ -756,10 +756,10 @@ func _create_lighting() -> void:
 
 	# --- Procedural Sky ---
 	sky_material = ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color(0.9, 0.5, 0.18)
-	sky_material.sky_horizon_color = Color(1.0, 0.72, 0.34)
-	sky_material.ground_bottom_color = Color(0.2, 0.12, 0.05)
-	sky_material.ground_horizon_color = Color(1.0, 0.72, 0.34)
+	sky_material.sky_top_color = Color(0.30, 0.55, 0.88)
+	sky_material.sky_horizon_color = Color(0.72, 0.84, 0.95)
+	sky_material.ground_bottom_color = Color(0.12, 0.13, 0.15)
+	sky_material.ground_horizon_color = Color(0.72, 0.84, 0.95)
 	sky_material.sun_angle_max = 30.0
 	sky_material.sun_curve = 0.15
 
@@ -771,12 +771,12 @@ func _create_lighting() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.82, 0.62, 0.36)
-	env.ambient_light_energy = 0.68
+	env.ambient_light_color = Color(0.78, 0.84, 0.94)
+	env.ambient_light_energy = 0.55
 
 	# Tonemapping ACES
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 0.85
+	env.tonemap_exposure = 1.0
 
 	# SSAO
 	env.ssao_enabled = ssao_enabled
@@ -786,9 +786,9 @@ func _create_lighting() -> void:
 	# Fog
 	env.volumetric_fog_enabled = false
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.86, 0.57, 0.24)
-	env.fog_light_energy = 0.82
-	env.fog_density = 0.004
+	env.fog_light_color = Color(0.75, 0.85, 0.97)
+	env.fog_light_energy = 0.7
+	env.fog_density = 0.0025
 
 	fog_env = env
 	world_env = WorldEnvironment.new()
@@ -829,28 +829,28 @@ func _update_day_night_cycle(delta: float) -> void:
 
 	# --- Sun intensity ---
 	if sun_light != null:
-		sun_light.light_energy = max(sun_factor * 1.45, 0.08) if sun_altitude > 0.0 else 0.0
+		sun_light.light_energy = max(sun_factor * 1.3, 0.08) if sun_altitude > 0.0 else 0.0
 		sun_light.shadow_enabled = shadows_enabled and sun_altitude > 0.08
 		if is_sunrise_sunset:
-			sun_light.light_color = Color(1.0, 0.5, 0.18).lerp(Color(1.0, 0.78, 0.42), sun_factor)
+			sun_light.light_color = Color(1.0, 0.62, 0.35).lerp(Color(1.0, 0.97, 0.9), sun_factor)
 		else:
-			sun_light.light_color = Color(1.0, 0.78, 0.42)
+			sun_light.light_color = Color(1.0, 0.97, 0.9)
 
 	# --- Moon intensity ---
 	if moon_light != null:
 		var moon_factor: float = clamp(-sun_altitude - 0.1, 0.0, 1.0)
-		moon_light.light_color = Color(0.9, 0.6, 0.32)
-		moon_light.light_energy = moon_factor * 1.25
+		moon_light.light_color = Color(0.62, 0.70, 0.92)
+		moon_light.light_energy = moon_factor * 0.35
 		moon_light.shadow_enabled = shadows_enabled and moon_factor > 0.08
 
 	# --- Sky colors ---
 	if sky_material != null:
-		var day_top: Color = Color(0.00, 0.70, 1.00)
-		var day_horizon: Color = Color(0.94, 0.57, 0.08)
-		var night_top: Color = Color(0.05, 0.01, 0.53)
-		var night_horizon: Color = Color(0.55, 0.29, 0.67)
-		var sunset_top: Color = Color(0.77, 0.55, 0.09)
-		var sunset_horizon: Color = Color(0.61, 0.22, 0.66)
+		var day_top: Color = Color(0.30, 0.55, 0.88)
+		var day_horizon: Color = Color(0.72, 0.84, 0.95)
+		var night_top: Color = Color(0.02, 0.03, 0.09)
+		var night_horizon: Color = Color(0.07, 0.10, 0.18)
+		var sunset_top: Color = Color(0.28, 0.32, 0.55)
+		var sunset_horizon: Color = Color(0.98, 0.58, 0.28)
 
 		if is_night:
 			sky_material.sky_top_color = night_top
@@ -868,25 +868,25 @@ func _update_day_night_cycle(delta: float) -> void:
 
 	# --- Ambient light ---
 	if fog_env != null:
-		var ambient_energy: float = lerp(0.46, 0.68, sun_factor) if not is_night else 0.62
+		var ambient_energy: float = lerp(0.40, 0.55, sun_factor) if not is_night else 0.32
 		fog_env.ambient_light_energy = ambient_energy
 
 		if is_night:
-			fog_env.ambient_light_color = Color(0.32, 0.10, 0.72)
+			fog_env.ambient_light_color = Color(0.16, 0.20, 0.32)
 		elif is_sunrise_sunset:
 			var t: float = clamp(sun_altitude / 0.25, 0.0, 1.0)
-			fog_env.ambient_light_color = Color(0.83, 0.41, 0.01).lerp(Color(0.87, 0.89, 0.13), t)
+			fog_env.ambient_light_color = Color(0.88, 0.68, 0.52).lerp(Color(0.78, 0.84, 0.94), t)
 		else:
-			fog_env.ambient_light_color = Color(0.87, 0.89, 0.13)
+			fog_env.ambient_light_color = Color(0.78, 0.84, 0.94)
 
 		# --- Fog color follows sky ---
 		if is_night:
-			fog_env.fog_light_color = Color(0.15, 0.08, 0.42)
+			fog_env.fog_light_color = Color(0.05, 0.07, 0.13)
 		elif is_sunrise_sunset:
 			var t: float = clamp(sun_altitude / 0.25, 0.0, 1.0)
-			fog_env.fog_light_color = Color(0.72, 0.25, 0.97).lerp(Color(0.98, 1.00, 0.00), t)
+			fog_env.fog_light_color = Color(0.95, 0.62, 0.38).lerp(Color(0.75, 0.85, 0.97), t)
 		else:
-			fog_env.fog_light_color = Color(0.98, 1.00, 0.00)
+			fog_env.fog_light_color = Color(0.75, 0.85, 0.97)
 
 	# --- HUD time label ---
 	if hud_time_label != null:
@@ -943,6 +943,10 @@ func _generate_biome_one_data() -> void:
 	active_terrain_tile = TerrainTileDataScript.load_from_file(DEFAULT_TERRAIN_TILE_PATH)
 	if active_terrain_tile == null:
 		active_terrain_tile = TerrainTileDataScript.create_draft(WORLD_SEED, Vector2i.ZERO)
+	# mapa fixo: suaviza/aplaina o relevo e reserva a zona da cidade ANTES do hash,
+	# entao todo mundo gera exatamente o mesmo mapa e os saves continuam validos
+	_suaviza_terreno(active_terrain_tile)
+	var altura_cidade: int = _prepara_zona_cidade(active_terrain_tile)
 	active_structure_registry = StructureRegistryScript.load_from_file(DEFAULT_STRUCTURE_REGISTRY_PATH)
 	if active_structure_registry == null:
 		active_structure_registry = StructureRegistryScript.empty_registry()
@@ -952,9 +956,146 @@ func _generate_biome_one_data() -> void:
 	last_generation_report = generator.generate_into(voxel_world, active_terrain_tile, active_structure_registry, WORLD_SEED)
 	if not last_generation_report.is_ok():
 		push_error(last_generation_report.summary())
+	_construir_cidade(altura_cidade)
 	for z in range(TerrainTileDataScript.TILE_SIZE):
 		for x in range(TerrainTileDataScript.TILE_SIZE):
 			surface_heights[Vector2i(x, z)] = active_terrain_tile.get_height(x, z)
+
+
+# ---------------- terreno natural + cidade fixa ----------------
+
+const CIDADE_RECT := Rect2i(28, 28, 48, 48)  # zona urbana no tile 100x100
+
+func _suaviza_terreno(tile) -> void:
+	# 3 passadas de blur + reducao de amplitude: relevo rolando suave, bem mais plano
+	var ts: int = TerrainTileDataScript.TILE_SIZE
+	for passada in 3:
+		var copia: PackedInt32Array = tile.heights.duplicate()
+		for z in range(ts):
+			for x in range(ts):
+				var soma: int = 0
+				var qtd: int = 0
+				for dz in range(-1, 2):
+					for dx in range(-1, 2):
+						var nx: int = x + dx
+						var nz: int = z + dz
+						if nx >= 0 and nx < ts and nz >= 0 and nz < ts:
+							soma += copia[nz * ts + nx]
+							qtd += 1
+				tile.heights[z * ts + x] = int(round(float(soma) / float(qtd)))
+	var total: int = 0
+	for i in range(tile.heights.size()):
+		total += tile.heights[i]
+	var media: float = float(total) / float(tile.heights.size())
+	for i in range(tile.heights.size()):
+		var h: float = media + (float(tile.heights[i]) - media) * 0.45
+		tile.heights[i] = clampi(int(round(h)), TerrainTileDataScript.MIN_SURFACE_Y, TerrainTileDataScript.MAX_SURFACE_Y)
+
+
+func _prepara_zona_cidade(tile) -> int:
+	# aplaina a zona urbana na altura media dela e bloqueia cavernas/vegetacao/estruturas
+	var ts: int = TerrainTileDataScript.TILE_SIZE
+	var soma: int = 0
+	var qtd: int = 0
+	for z in range(CIDADE_RECT.position.y, CIDADE_RECT.end.y):
+		for x in range(CIDADE_RECT.position.x, CIDADE_RECT.end.x):
+			soma += tile.heights[z * ts + x]
+			qtd += 1
+	var altura: int = int(round(float(soma) / float(qtd)))
+	for z in range(CIDADE_RECT.position.y - 2, CIDADE_RECT.end.y + 2):
+		for x in range(CIDADE_RECT.position.x - 2, CIDADE_RECT.end.x + 2):
+			if x < 0 or z < 0 or x >= ts or z >= ts:
+				continue
+			var indice: int = z * ts + x
+			if CIDADE_RECT.has_point(Vector2i(x, z)):
+				tile.heights[indice] = altura
+				tile.zone_flags[indice] = TerrainTileDataScript.ZONE_PROTECTED | TerrainTileDataScript.ZONE_NO_CAVES
+				tile.cave_density[indice] = 0
+			else:
+				# borda de 2 celulas faz rampa suave pra fora da cidade
+				tile.heights[indice] = int(round(lerpf(float(tile.heights[indice]), float(altura), 0.5)))
+	return altura
+
+
+func _construir_cidade(altura: int) -> void:
+	# ruas em grade + lotes com casas; deterministico (mapa fixo)
+	var ox: int = CIDADE_RECT.position.x
+	var oz: int = CIDADE_RECT.position.y
+	var lado: int = CIDADE_RECT.size.x
+	# ruas de pedra (linhas a cada 12, largura 2)
+	for z in range(oz, oz + lado):
+		for x in range(ox, ox + lado):
+			var lx: int = x - ox
+			var lz: int = z - oz
+			var na_rua: bool = (lx % 12) < 2 or (lz % 12) < 2
+			if na_rua:
+				voxel_world.set_base_block(Vector3i(x, altura, z), "cobblestone")
+				for y in range(altura + 1, altura + 6):
+					voxel_world.clear_base_block(Vector3i(x, y, z))
+	# postes de luz nos cruzamentos
+	for iz in range(0, lado, 12):
+		for ix in range(0, lado, 12):
+			var px: int = ox + ix
+			var pz: int = oz + iz
+			for y in range(altura + 1, altura + 4):
+				voxel_world.set_base_block(Vector3i(px, y, pz), "wood")
+			voxel_world.set_base_block(Vector3i(px, altura + 4, pz), "torch")
+	# lotes 4x4 (origem a cada 12, offset 2 da rua)
+	var indice_lote: int = 0
+	for iz in range(0, lado - 2, 12):
+		for ix in range(0, lado - 2, 12):
+			var lote_x: int = ox + ix + 2
+			var lote_z: int = oz + iz + 2
+			indice_lote += 1
+			if lote_x <= 50 and lote_x + 9 >= 44 and lote_z <= 50 and lote_z + 9 >= 44:
+				_construir_casa(lote_x + 1, lote_z + 1, altura, "planks")  # casa do jogador
+			elif indice_lote % 5 == 0:
+				_construir_praca(lote_x, lote_z, altura)
+			else:
+				var parede: String = "planks" if (indice_lote % 3) != 0 else "cobblestone"
+				_construir_casa(lote_x + 1, lote_z + 1, altura, parede)
+
+
+func _construir_casa(cx: int, cz: int, altura: int, parede: String) -> void:
+	var larg: int = 7
+	var prof: int = 6
+	# limpa o volume e poe piso
+	for x in range(cx, cx + larg):
+		for z in range(cz, cz + prof):
+			for y in range(altura + 1, altura + 7):
+				voxel_world.clear_base_block(Vector3i(x, y, z))
+			voxel_world.set_base_block(Vector3i(x, altura, z), "cobblestone")
+	# paredes com cantos de madeira
+	for y in range(altura + 1, altura + 4):
+		for x in range(cx, cx + larg):
+			for z in range(cz, cz + prof):
+				var na_borda: bool = x == cx or x == cx + larg - 1 or z == cz or z == cz + prof - 1
+				if not na_borda:
+					continue
+				var canto: bool = (x == cx or x == cx + larg - 1) and (z == cz or z == cz + prof - 1)
+				voxel_world.set_base_block(Vector3i(x, y, z), "wood" if canto else parede)
+	# porta (sul, 1x2) e janelas (leste/oeste)
+	var porta_x: int = cx + int(larg / 2.0)
+	voxel_world.clear_base_block(Vector3i(porta_x, altura + 1, cz + prof - 1))
+	voxel_world.clear_base_block(Vector3i(porta_x, altura + 2, cz + prof - 1))
+	voxel_world.clear_base_block(Vector3i(cx, altura + 2, cz + int(prof / 2.0)))
+	voxel_world.clear_base_block(Vector3i(cx + larg - 1, altura + 2, cz + int(prof / 2.0)))
+	# telhado
+	for x in range(cx, cx + larg):
+		for z in range(cz, cz + prof):
+			voxel_world.set_base_block(Vector3i(x, altura + 4, z), "planks")
+	# tocha interna
+	voxel_world.set_base_block(Vector3i(cx + 1, altura + 1, cz + 1), "torch")
+
+
+func _construir_praca(cx: int, cz: int, altura: int) -> void:
+	for x in range(cx, cx + 10):
+		for z in range(cz, cz + 10):
+			for y in range(altura + 1, altura + 6):
+				voxel_world.clear_base_block(Vector3i(x, y, z))
+			voxel_world.set_base_block(Vector3i(x, altura, z), "stone")
+	for canto in [Vector2i(cx + 1, cz + 1), Vector2i(cx + 8, cz + 1), Vector2i(cx + 1, cz + 8), Vector2i(cx + 8, cz + 8)]:
+		voxel_world.set_base_block(Vector3i(canto.x, altura + 1, canto.y), "torch")
 
 
 # ---------------- mundo superplano ----------------
@@ -1659,16 +1800,18 @@ func _make_square_box(bg_color: Color, border_color: Color, border_width: int, c
 	return style
 
 func _apply_square_panel_style(panel: PanelContainer) -> void:
-	panel.add_theme_stylebox_override("panel", _make_square_box(Color(0.07, 0.07, 0.07, 0.96), Color(0.34, 0.34, 0.34, 1.0), 2, 14.0))
+	panel.add_theme_stylebox_override("panel", _make_square_box(Color(0.08, 0.09, 0.10, 0.97), Color(0.30, 0.42, 0.34, 1.0), 2, 16.0))
 
 func _apply_square_button_style(button: Button) -> void:
-	button.add_theme_stylebox_override("normal", _make_square_box(Color(0.18, 0.18, 0.18, 1.0), Color(0.42, 0.42, 0.42, 1.0), 1, 8.0))
-	button.add_theme_stylebox_override("hover", _make_square_box(Color(0.26, 0.26, 0.26, 1.0), Color(0.58, 0.58, 0.58, 1.0), 1, 8.0))
-	button.add_theme_stylebox_override("pressed", _make_square_box(Color(0.11, 0.11, 0.11, 1.0), Color(0.78, 0.78, 0.78, 1.0), 1, 8.0))
-	button.add_theme_color_override("font_color", Color.WHITE)
+	button.add_theme_stylebox_override("normal", _make_square_box(Color(0.13, 0.16, 0.14, 1.0), Color(0.32, 0.44, 0.36, 1.0), 1, 9.0))
+	button.add_theme_stylebox_override("hover", _make_square_box(Color(0.19, 0.26, 0.21, 1.0), Color(0.46, 0.74, 0.52, 1.0), 1, 9.0))
+	button.add_theme_stylebox_override("pressed", _make_square_box(Color(0.09, 0.12, 0.10, 1.0), Color(0.55, 0.85, 0.60, 1.0), 1, 9.0))
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	button.add_theme_color_override("font_color", Color(0.94, 0.96, 0.94))
 	button.add_theme_color_override("font_hover_color", Color.WHITE)
-	button.add_theme_color_override("font_pressed_color", Color.WHITE)
-	button.custom_minimum_size = Vector2(0, 34)
+	button.add_theme_color_override("font_pressed_color", Color(0.75, 0.95, 0.80))
+	button.add_theme_font_size_override("font_size", 15)
+	button.custom_minimum_size = Vector2(0, 36)
 
 func _make_menu_button(text: String, callback: Callable) -> Button:
 	var button: Button = Button.new()
@@ -1969,8 +2112,9 @@ func _start_world_loading(is_continue: bool) -> void:
 			return
 			
 	if not is_continue and world_type == "normal":
-		var spawn_surface_y: int = _surface_y_at(52, 52)
-		var spawn_chest_pos: Vector3i = Vector3i(52, spawn_surface_y + 1, 52)
+		# bau inicial dentro da casa do jogador na cidade
+		var spawn_surface_y: int = _surface_y_at(46, 45)
+		var spawn_chest_pos: Vector3i = Vector3i(46, spawn_surface_y + 1, 45)
 		_set_block(spawn_chest_pos, "chest")
 		var spawn_chest_slots: Array = _make_slots(CHEST_SLOT_COUNT)
 		_add_item_to_slots(spawn_chest_slots, "planks", 8)
