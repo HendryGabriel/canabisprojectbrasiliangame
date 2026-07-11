@@ -14,6 +14,8 @@ const EntityManagerScript = preload("res://src/entity_manager.gd")
 const LightRegistryScript = preload("res://src/light_registry.gd")
 const ThumbstoneScript = preload("res://src/thumbstone.gd")
 const SchematicImporterScript = preload("res://src/schematic_importer.gd")
+const SceneryDataScript = preload("res://src/scenery_data.gd")
+const SCENERY_DIR: String = "res://data/scenery/"
 
 const BIOME_SIZE: int = 100
 const SURFACE_BASE_Y: int = 0
@@ -1510,6 +1512,37 @@ func _queue_sections_aabb(minimo: Vector3i, maximo: Vector3i) -> void:
 	voxel_sections.queue_sections(secoes.keys(), true)
 
 
+func _load_scenery() -> void:
+	# carrega TODOS os cenarios baked do Editor de Mapa como um objeto estatico fundido
+	# (uma mesh + uma colisao por arquivo); o jogador so anda e colide, nao edita.
+	if world_root == null:
+		return
+	var velho: Node = world_root.get_node_or_null("BakedScenery")
+	if velho != null:
+		velho.queue_free()
+	var raiz: Node3D = Node3D.new()
+	raiz.name = "BakedScenery"
+	world_root.add_child(raiz)
+	var dir: DirAccess = DirAccess.open(SCENERY_DIR)
+	if dir == null:
+		return
+	for arquivo in dir.get_files():
+		if not arquivo.ends_with(".json"):
+			continue
+		var cenario = SceneryDataScript.load_from_file(SCENERY_DIR + arquivo)
+		if cenario == null or cenario.cubos.is_empty():
+			continue
+		var malha: MeshInstance3D = MeshInstance3D.new()
+		malha.mesh = cenario.bake_mesh()
+		malha.material_override = cenario.bake_material()
+		raiz.add_child(malha)
+		var corpo: StaticBody3D = StaticBody3D.new()
+		var col: CollisionShape3D = CollisionShape3D.new()
+		col.shape = cenario.bake_collision()
+		corpo.add_child(col)
+		raiz.add_child(corpo)
+
+
 func _bounds_size() -> int:
 	return voxel_world.unlocked_size if voxel_world != null else BIOME_SIZE
 
@@ -1839,6 +1872,7 @@ func _create_menu_panels() -> void:
 	main_root.add_child(_make_menu_button("Novo Jogo", _start_new_game))
 	main_root.add_child(_make_menu_button("Novo Mundo Superplano (Criativo)", _start_new_flat_world))
 	main_root.add_child(_make_menu_button("Editor de Terreno", _open_terrain_editor))
+	main_root.add_child(_make_menu_button("Editor de Mapa (Cidade)", _open_map_editor))
 	main_root.add_child(_make_menu_button("Estudio de Estruturas", _open_structure_studio))
 	main_root.add_child(_make_menu_button("Opcoes", _open_options_from_main))
 	main_root.add_child(_make_menu_button("Sair", _quit_game))
@@ -2007,6 +2041,11 @@ func _open_terrain_editor() -> void:
 	get_tree().change_scene_to_file("res://scenes/terrain_editor.tscn")
 
 
+func _open_map_editor() -> void:
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	get_tree().change_scene_to_file("res://scenes/map_editor.tscn")
+
+
 func _open_structure_studio() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	get_tree().change_scene_to_file("res://scenes/structure_studio.tscn")
@@ -2131,6 +2170,7 @@ func _finish_world_loading() -> void:
 		loading_panel.visible = false
 		
 	_create_world_bounds()
+	_load_scenery()
 	_apply_performance_profile()
 	_create_player()
 	_sync_creative_player()
