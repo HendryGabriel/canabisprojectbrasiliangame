@@ -37,7 +37,9 @@ const STABLE_BLOCK_ORDER: Array = [
 ]
 
 
-var _voxels: PackedByteArray = PackedByteArray()
+## Grid de paleta em 16-bit (PackedInt32Array) — suporta ate 65535 blocos, o que
+## permite a grade de 256 blocos de cor sem estourar a antiga paleta de 1 byte.
+var _voxels: PackedInt32Array = PackedInt32Array()
 var _surface_heights: PackedInt32Array = PackedInt32Array()
 var _name_to_id: Dictionary = {}
 var _id_to_name: PackedStringArray = PackedStringArray([""])
@@ -75,15 +77,23 @@ func configure_palette(block_definitions: Dictionary) -> void:
 	for block_name in STABLE_BLOCK_ORDER:
 		if block_definitions.has(block_name):
 			names.append(block_name)
+	# blocos NAO-cor primeiro (mantem ids antigos), blocos "color_*" por ultimo,
+	# em ordem numerica -> ids estaveis e saves antigos continuam validos
 	var remaining: Array = block_definitions.keys()
 	remaining.sort()
 	for block_name in remaining:
-		if not names.has(block_name):
+		if not names.has(block_name) and not str(block_name).begins_with("color_"):
 			names.append(block_name)
+	var color_names: Array = []
+	for block_name in remaining:
+		if str(block_name).begins_with("color_"):
+			color_names.append(block_name)
+	color_names.sort()
+	names.append_array(color_names)
 	for raw_name in names:
 		var block_name: String = str(raw_name)
-		if _id_to_name.size() >= 256:
-			push_error("Voxel palette exceeded 255 block IDs.")
+		if _id_to_name.size() >= 65535:
+			push_error("Voxel palette exceeded 65534 block IDs.")
 			break
 		var palette_id: int = _id_to_name.size()
 		_name_to_id[block_name] = palette_id
@@ -110,7 +120,7 @@ func get_seed() -> int:
 func get_voxel_hash() -> String:
 	var context: HashingContext = HashingContext.new()
 	context.start(HashingContext.HASH_SHA256)
-	context.update(_voxels)
+	context.update(_voxels.to_byte_array())
 	return context.finish().hex_encode()
 
 
@@ -438,7 +448,7 @@ func get_nonempty_sections() -> Array:
 ## A snapshot owns its byte buffer and never references the live voxel grid.
 ## It is safe to hand to a worker as long as the worker only reads it.
 func make_section_snapshot(section: Vector3i) -> Dictionary:
-	var padded: PackedByteArray = PackedByteArray()
+	var padded: PackedInt32Array = PackedInt32Array()
 	padded.resize(PADDED_SECTION_SIZE * PADDED_SECTION_SIZE * PADDED_SECTION_SIZE)
 	var origin: Vector3i = get_section_origin(section)
 	var cursor: int = 0

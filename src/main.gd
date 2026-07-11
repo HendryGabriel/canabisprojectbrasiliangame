@@ -734,8 +734,25 @@ func _item_icon(item_id: String) -> Texture2D:
 	var texture: Texture2D = null
 	if icon_path != "":
 		texture = load(icon_path) as Texture2D
+	if texture == null:
+		# bloco de cor pura (sem textura): gera um icone de cor solida
+		var place_block2: String = str(item_data.get("place_block", ""))
+		var bd: Dictionary = block_defs.get(place_block2, {})
+		if bd.has("color") and not bd.has("texture") and not bd.has("textures"):
+			texture = _solid_color_icon(bd["color"])
 	item_icons[item_id] = texture
 	return texture
+
+func _solid_color_icon(cor: Color) -> Texture2D:
+	var img: Image = Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	img.fill(cor)
+	# leve borda escura pra separar os slots
+	for i in range(16):
+		img.set_pixel(i, 0, cor.darkened(0.4))
+		img.set_pixel(i, 15, cor.darkened(0.4))
+		img.set_pixel(0, i, cor.darkened(0.4))
+		img.set_pixel(15, i, cor.darkened(0.4))
+	return ImageTexture.create_from_image(img)
 
 func _item_icon_faces(item_id: String) -> Dictionary:
 	if item_id == "":

@@ -536,7 +536,7 @@ static func _id_at(snapshot: Dictionary, pos: Vector3i) -> int:
 	var z: int = pos.z + 1
 	if x < 0 or x >= padded_size or y < 0 or y >= padded_size or z < 0 or z >= padded_size:
 		return 0
-	var voxels: PackedByteArray = snapshot["voxels"] as PackedByteArray
+	var voxels: PackedInt32Array = snapshot["voxels"] as PackedInt32Array
 	return int(voxels[(y * padded_size + z) * padded_size + x])
 
 

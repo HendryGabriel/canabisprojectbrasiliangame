@@ -2,8 +2,54 @@ extends RefCounted
 class_name BlockCatalog
 
 const AIR: String = "air"
+const COLOR_COUNT: int = 256   # blocos de cor pura (grade HSV 16 matizes x 16 tons)
+
+
+## id determinístico do bloco de cor i (color_000..color_255)
+static func color_block_id(i: int) -> String:
+	return "color_%03d" % i
+
+
+## a cor do bloco i: 16 colunas de matiz x 16 linhas variando saturação/valor;
+## a última coluna é uma escala de cinza (do preto ao branco) para tons neutros.
+static func color_of(i: int) -> Color:
+	var col: int = i % 16
+	var row: int = i / 16
+	if col == 15:
+		var t: float = float(row) / 15.0
+		return Color(t, t, t)  # tons de cinza
+	var hue: float = float(col) / 15.0
+	var sat: float = 1.0 - float(row) * 0.045      # 1.0 -> ~0.33
+	var val: float = 0.35 + float(row) * 0.043     # 0.35 -> ~1.0
+	return Color.from_hsv(hue, clampf(sat, 0.2, 1.0), clampf(val, 0.2, 1.0))
+
+
+static func _add_color_blocks(dict: Dictionary) -> void:
+	for i in range(COLOR_COUNT):
+		var id: String = color_block_id(i)
+		dict[id] = {
+			"name": "Cor %03d" % i,
+			"drop": id,
+			"color": color_of(i),
+			"place_item": id,
+			"interact": "",
+			"solid": true,
+		}
+
+
+static func _add_color_items(dict: Dictionary) -> void:
+	for i in range(COLOR_COUNT):
+		var id: String = color_block_id(i)
+		dict[id] = {"name": "Cor %03d" % i, "place_block": id, "tool": "", "icon": ""}
+
 
 static func blocks() -> Dictionary:
+	var base: Dictionary = _blocks_base()
+	_add_color_blocks(base)
+	return base
+
+
+static func _blocks_base() -> Dictionary:
 	return {
 		"grass": {
 			"name": "Grama",
@@ -257,6 +303,12 @@ static func blocks() -> Dictionary:
 	}
 
 static func items() -> Dictionary:
+	var base: Dictionary = _items_base()
+	_add_color_items(base)
+	return base
+
+
+static func _items_base() -> Dictionary:
 	return {
 		"dirt": {"name": "Terra", "place_block": "dirt", "tool": "", "icon": "res://texture/used/dirt.png"},
 		"cobblestone": {"name": "Pedregulho", "place_block": "cobblestone", "tool": "", "icon": "res://texture/used/cobblestone.png"},
