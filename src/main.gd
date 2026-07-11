@@ -13,6 +13,7 @@ const VoxelDebrisSystemScript = preload("res://src/voxel_debris_system.gd")
 const EntityManagerScript = preload("res://src/entity_manager.gd")
 const LightRegistryScript = preload("res://src/light_registry.gd")
 const ThumbstoneScript = preload("res://src/thumbstone.gd")
+const SchematicImporterScript = preload("res://src/schematic_importer.gd")
 
 const BIOME_SIZE: int = 100
 const SURFACE_BASE_Y: int = 0
@@ -137,6 +138,28 @@ var light_registry = null
 var entity_manager = null
 var thumbstones: Array = []
 
+# --- modo criativo / superplano / schematic / ferramenta de area ---
+var creative_mode: bool = false
+var world_type: String = "normal"   # "normal" | "superflat"
+var flat_size: int = 100            # lado da area desbloqueada no superplano
+var flat_surface_y: int = 0
+var creative_items: Array = []
+var creative_panel: PanelContainer
+var creative_grid: GridContainer
+var creative_inv_grid: GridContainer
+var schematic_mode: bool = false
+var schematic_data: Dictionary = {}
+var schematic_rot: int = 0
+var schematic_preview: MeshInstance3D = null
+var schematic_dialog: FileDialog
+var flat_size_slider: HSlider
+var flat_size_value_label: Label
+var flat_size_row: VBoxContainer
+var sel_a: Vector3i = Vector3i.ZERO
+var sel_b: Vector3i = Vector3i.ZERO
+var sel_count: int = 0
+var sel_box: MeshInstance3D = null
+
 var player: TrumanPlayer
 var world_root: Node3D
 var ui_layer: CanvasLayer
@@ -233,8 +256,8 @@ func _process(delta: float) -> void:
 			message_label.text = ""
 	if player != null and is_instance_valid(player) and player.is_inside_tree():
 		# Handle held left-click block breaking & held right-click block placing
-		if game_started and not _is_menu_open() and not inventory_panel.visible and not chest_panel.visible:
-			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not left_click_consumed and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
+		if game_started and not _is_menu_open() and not inventory_panel.visible and not chest_panel.visible and not (creative_panel != null and creative_panel.visible):
+			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not left_click_consumed and not schematic_mode and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 				_handle_block_breaking(delta)
 			else:
 				_cancel_block_breaking()
@@ -246,6 +269,7 @@ func _process(delta: float) -> void:
 		else:
 			_cancel_block_breaking()
 		_update_target_outline()
+		_update_schematic_preview()
 	_update_cursor_stack_label()
 	_update_hover_tooltip_position()
 	_update_status()
@@ -275,7 +299,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			elif pause_menu_panel != null and pause_menu_panel.visible:
 				_resume_game()
-			elif inventory_panel.visible or chest_panel.visible:
+			elif schematic_mode:
+				_cancelar_schematic()
+			elif inventory_panel.visible or chest_panel.visible or (creative_panel != null and creative_panel.visible):
 				_close_all_panels()
 			else:
 				_show_pause_menu()
@@ -285,11 +311,30 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_SHIFT:
 			_collect_nearby_thumbstone()
 		if event.keycode == KEY_E:
-			if chest_panel.visible or inventory_panel.visible:
+			if chest_panel.visible or inventory_panel.visible or (creative_panel != null and creative_panel.visible):
 				_close_all_panels()
+			elif creative_mode:
+				_open_creative_panel()
 			else:
 				_open_inventory_craft()
 			return
+		if event.keycode == KEY_F4:
+			_toggle_creative_mode()
+			return
+		if Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
+			if event.keycode == KEY_R:
+				if schematic_mode:
+					schematic_rot = (schematic_rot + 1) % 4
+					_message("Schematic girado para %d graus." % (schematic_rot * 90))
+				else:
+					_marcar_canto_selecao()
+				return
+			if event.keycode == KEY_F:
+				_preencher_selecao()
+				return
+			if event.keycode == KEY_X:
+				_limpar_selecao(true)
+				return
 		if event.keycode == KEY_Q:
 			_drop_selected_item()
 			return
@@ -304,7 +349,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_update_hotbar()
 			return
 
-	if not game_started or _is_menu_open() or inventory_panel.visible or chest_panel.visible:
+	if not game_started or _is_menu_open() or inventory_panel.visible or chest_panel.visible or (creative_panel != null and creative_panel.visible):
 		return
 
 	if event is InputEventMouseButton and event.pressed:
@@ -323,6 +368,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
+			if schematic_mode:
+				_estampar_schematic()
+				left_click_consumed = true
+				get_viewport().set_input_as_handled()
+				return
 			left_click_consumed = _handle_primary_click()
 			if left_click_consumed:
 				get_viewport().set_input_as_handled()
@@ -883,6 +933,11 @@ func _create_loading_panel() -> void:
 	root.add_child(loading_progress_bar)
 
 func _generate_biome_one_data() -> void:
+	if world_type == "superflat":
+		_generate_superflat_data()
+		return
+	if voxel_world != null:
+		voxel_world.set_unlocked_size(BIOME_SIZE)
 	surface_heights.clear()
 	_clear_chest_inventories()
 	active_terrain_tile = TerrainTileDataScript.load_from_file(DEFAULT_TERRAIN_TILE_PATH)
@@ -901,28 +956,456 @@ func _generate_biome_one_data() -> void:
 		for x in range(TerrainTileDataScript.TILE_SIZE):
 			surface_heights[Vector2i(x, z)] = active_terrain_tile.get_height(x, z)
 
+
+# ---------------- mundo superplano ----------------
+
+func _generate_superflat_data() -> void:
+	surface_heights.clear()
+	_clear_chest_inventories()
+	var tile = TerrainTileDataScript.new()
+	tile.tile_coord = Vector2i.ZERO
+	tile.draft_seed = WORLD_SEED
+	tile.heights.fill(flat_surface_y)
+	tile.surface_profiles.fill(TerrainTileDataScript.PROFILE_GRASS)
+	tile.cave_density.fill(0)   # sem cavernas
+	tile.zone_flags.fill(0)     # sem florestas/decoracao/estruturas
+	active_terrain_tile = tile
+	active_structure_registry = StructureRegistryScript.empty_registry()
+	active_terrain_hash = active_terrain_tile.content_hash()
+	active_registry_hash = active_structure_registry.content_hash()
+	var generator = TerrainGeneratorScript.new()
+	last_generation_report = generator.generate_into(voxel_world, active_terrain_tile, active_structure_registry, WORLD_SEED)
+	if not last_generation_report.is_ok():
+		push_error(last_generation_report.summary())
+	for z in range(TerrainTileDataScript.TILE_SIZE):
+		for x in range(TerrainTileDataScript.TILE_SIZE):
+			surface_heights[Vector2i(x, z)] = flat_surface_y
+	# a area alem do tile de 100x100 (expansao salva) e gerada direto, plana
+	voxel_world.set_unlocked_size(flat_size)
+	if flat_size > TerrainTileDataScript.TILE_SIZE:
+		for x in range(flat_size):
+			for z in range(flat_size):
+				if x >= TerrainTileDataScript.TILE_SIZE or z >= TerrainTileDataScript.TILE_SIZE:
+					_gera_coluna_flat(x, z)
+
+
+func _gera_coluna_flat(x: int, z: int) -> void:
+	for y in range(BEDROCK_Y, flat_surface_y + 1):
+		var id: String
+		if y == BEDROCK_Y:
+			id = "bedrock"
+		elif y == flat_surface_y:
+			id = "grass"
+		elif flat_surface_y - y <= 3:
+			id = "dirt"
+		else:
+			id = "stone"
+		voxel_world.set_base_block(Vector3i(x, y, z), id)
+	voxel_world.set_surface_height(x, z, flat_surface_y)
+	surface_heights[Vector2i(x, z)] = flat_surface_y
+
+
+func _aplicar_tamanho_flat() -> void:
+	if world_type != "superflat" or voxel_world == null:
+		if pause_status_label != null:
+			pause_status_label.text = "Ajuste de tamanho so vale em mundos superplanos."
+		return
+	var novo: int = int(flat_size_slider.value)
+	var atual: int = voxel_world.unlocked_size
+	if novo <= atual:
+		pause_status_label.text = "O mapa ja tem %d x %d — so da pra aumentar." % [atual, atual]
+		return
+	for x in range(novo):
+		for z in range(novo):
+			if x >= atual or z >= atual:
+				_gera_coluna_flat(x, z)
+	flat_size = novo
+	voxel_world.set_unlocked_size(novo)
+	_rebuild_world_bounds()
+	if voxel_sections != null:
+		voxel_sections.queue_rebuild_all(false)
+	pause_status_label.text = "Mapa expandido para %d x %d." % [novo, novo]
+
+
+func _peek_save_meta() -> void:
+	# le so os metadados do save ANTES de gerar a base (tipo/tamanho definem a geracao)
+	world_type = "normal"
+	flat_size = 100
+	flat_surface_y = 0
+	creative_mode = false
+	var caminho: String = SAVE_PATH if FileAccess.file_exists(SAVE_PATH) else V3_SAVE_PATH
+	var arquivo: FileAccess = FileAccess.open(caminho, FileAccess.READ)
+	if arquivo == null:
+		return
+	var json: JSON = JSON.new()
+	if json.parse(arquivo.get_as_text()) != OK or typeof(json.data) != TYPE_DICTIONARY:
+		return
+	var dados: Dictionary = json.data
+	world_type = str(dados.get("world_type", "normal"))
+	flat_size = clampi(int(dados.get("flat_size", 100)), 100, VoxelWorldScript.WORLD_WIDTH)
+	flat_surface_y = int(dados.get("flat_surface_y", 0))
+	creative_mode = bool(dados.get("creative_mode", false))
+
+
+# ---------------- modo criativo ----------------
+
+func _toggle_creative_mode() -> void:
+	creative_mode = not creative_mode
+	_sync_creative_player()
+	if creative_mode:
+		_message("Modo criativo LIGADO: voo com espaco duplo, E abre todos os blocos, R marca area, F preenche.")
+	else:
+		_message("Modo criativo desligado.")
+
+
+func _sync_creative_player() -> void:
+	if player == null:
+		return
+	player.can_fly = creative_mode
+	player.invulnerable = creative_mode
+	if not creative_mode:
+		player.creative_flight = false
+
+
+func _create_creative_panel() -> void:
+	creative_panel = PanelContainer.new()
+	creative_panel.visible = false
+	creative_panel.position = Vector2(215, 30)
+	creative_panel.size = Vector2(850, 640)
+	_apply_square_panel_style(creative_panel)
+	ui_layer.add_child(creative_panel)
+
+	var root: VBoxContainer = VBoxContainer.new()
+	root.add_theme_constant_override("separation", 10)
+	creative_panel.add_child(root)
+
+	var titulo: Label = Label.new()
+	titulo.text = "Inventário Criativo"
+	titulo.add_theme_font_size_override("font_size", 20)
+	root.add_child(titulo)
+
+	var dica: Label = Label.new()
+	dica.text = "Clique pega 64 - clique direito pega 1 - Shift+clique manda pro inventário - clique com item na mão descarta."
+	dica.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(dica)
+
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(820, 340)
+	root.add_child(scroll)
+	creative_grid = GridContainer.new()
+	creative_grid.columns = 9
+	scroll.add_child(creative_grid)
+
+	root.add_child(HSeparator.new())
+	var inv_label: Label = Label.new()
+	inv_label.text = "Inventário do Jogador"
+	root.add_child(inv_label)
+	creative_inv_grid = GridContainer.new()
+	creative_inv_grid.columns = 9
+	creative_inv_grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	root.add_child(creative_inv_grid)
+
+
+func _open_creative_panel() -> void:
+	_return_craft_slots_to_inventory()
+	inventory_panel.visible = false
+	chest_panel.visible = false
+	creative_panel.visible = true
+	_update_creative_panel(true)
+	_set_ui_mode(true)
+
+
+func _update_creative_panel(rebuild_catalog: bool = false) -> void:
+	if creative_panel == null or not creative_panel.visible:
+		return
+	if creative_items.is_empty():
+		creative_items = item_defs.keys()
+		creative_items.sort()
+	if rebuild_catalog or creative_grid.get_child_count() == 0:
+		_clear_children(creative_grid)
+		for i in range(creative_items.size()):
+			creative_grid.add_child(_make_item_slot("creative", i, {"item": str(creative_items[i]), "count": 1}, Vector2(78, 54)))
+	_clear_children(creative_inv_grid)
+	for i in range(inventory_slots.size()):
+		creative_inv_grid.add_child(_make_item_slot("inventory", i, inventory_slots[i], Vector2(78, 54)))
+
+
+# ---------------- importacao de schematics do Minecraft ----------------
+
+func _abrir_dialogo_schematic() -> void:
+	if not game_started:
+		if pause_status_label != null:
+			pause_status_label.text = "Entre num mundo antes de importar."
+		return
+	if schematic_dialog == null:
+		_create_schematic_dialog()
+	schematic_dialog.popup_centered(Vector2i(760, 520))
+
+
+func _create_schematic_dialog() -> void:
+	schematic_dialog = FileDialog.new()
+	schematic_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	schematic_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	schematic_dialog.title = "Importar Schematic do Minecraft"
+	schematic_dialog.filters = PackedStringArray([
+		"*.schem ; Schematic (WorldEdit/Sponge)",
+		"*.schematic ; Schematic (MCEdit legado)",
+		"*.nbt ; Structure Block",
+	])
+	schematic_dialog.file_selected.connect(_on_schematic_selected)
+	ui_layer.add_child(schematic_dialog)
+
+
+func _on_schematic_selected(caminho: String) -> void:
+	var resultado: Dictionary = SchematicImporterScript.importar(caminho, block_defs)
+	if not bool(resultado.get("ok", false)):
+		if pause_status_label != null:
+			pause_status_label.text = str(resultado.get("erro", "Falha na importacao."))
+		return
+	var blocos: Dictionary = resultado.get("blocks", {})
+	if blocos.size() > 500000:
+		pause_status_label.text = "Schematic grande demais (%d blocos; maximo 500 mil)." % blocos.size()
+		return
+	if blocos.is_empty():
+		pause_status_label.text = "Nenhum bloco compativel encontrado no schematic."
+		return
+	schematic_data = resultado
+	schematic_rot = 0
+	schematic_mode = true
+	_limpar_selecao(false)
+	_resume_game()
+	var unmapped: Dictionary = resultado.get("unmapped", {})
+	var aviso: String = "" if unmapped.is_empty() else " (%d tipos sem equivalente viram ar)" % unmapped.size()
+	var tamanho: Vector3i = resultado.get("size", Vector3i.ONE)
+	_message("Schematic %dx%dx%d carregado%s. Clique posiciona, R gira, ESC cancela." % [tamanho.x, tamanho.y, tamanho.z, aviso])
+
+
+func _cancelar_schematic() -> void:
+	schematic_mode = false
+	schematic_data = {}
+	if schematic_preview != null and is_instance_valid(schematic_preview):
+		schematic_preview.queue_free()
+	schematic_preview = null
+	_message("Importacao de schematic encerrada.")
+
+
+func _schematic_tamanho_girado() -> Vector3i:
+	var s: Vector3i = schematic_data.get("size", Vector3i.ONE)
+	return Vector3i(s.z, s.y, s.x) if schematic_rot % 2 == 1 else s
+
+
+func _schematic_base() -> Vector3i:
+	var hit = _get_target_block()
+	if hit == null or not hit.is_valid():
+		return Vector3i(-9999, -9999, -9999)
+	var s: Vector3i = _schematic_tamanho_girado()
+	# assenta em cima do bloco mirado, centralizado em X/Z
+	return hit.pos + Vector3i(-int(s.x / 2.0), 1, -int(s.z / 2.0))
+
+
+func _rot_schematic_pos(p: Vector3i, s: Vector3i) -> Vector3i:
+	match schematic_rot:
+		1: return Vector3i(s.z - 1 - p.z, p.y, p.x)
+		2: return Vector3i(s.x - 1 - p.x, p.y, s.z - 1 - p.z)
+		3: return Vector3i(p.z, p.y, s.x - 1 - p.x)
+		_: return p
+
+
+func _update_schematic_preview() -> void:
+	if not schematic_mode:
+		if schematic_preview != null and is_instance_valid(schematic_preview):
+			schematic_preview.visible = false
+		return
+	var base: Vector3i = _schematic_base()
+	if base.y < -9000:
+		if schematic_preview != null and is_instance_valid(schematic_preview):
+			schematic_preview.visible = false
+		return
+	if schematic_preview == null or not is_instance_valid(schematic_preview):
+		schematic_preview = MeshInstance3D.new()
+		var caixa: BoxMesh = BoxMesh.new()
+		caixa.size = Vector3.ONE
+		schematic_preview.mesh = caixa
+		var mat: StandardMaterial3D = StandardMaterial3D.new()
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(0.2, 1.0, 0.4, 0.22)
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		schematic_preview.material_override = mat
+		world_root.add_child(schematic_preview)
+	var s: Vector3i = _schematic_tamanho_girado()
+	schematic_preview.visible = true
+	schematic_preview.scale = Vector3(s)
+	schematic_preview.position = Vector3(base) + Vector3(s) * 0.5 - Vector3(0.5, 0.5, 0.5)
+
+
+func _estampar_schematic() -> void:
+	var base: Vector3i = _schematic_base()
+	if base.y < -9000:
+		_message("Mire num bloco pra posicionar o schematic.")
+		return
+	var blocos: Dictionary = schematic_data.get("blocks", {})
+	var s: Vector3i = schematic_data.get("size", Vector3i.ONE)
+	var colocados: int = 0
+	var fora: int = 0
+	var minimo: Vector3i = Vector3i(999999, 999999, 999999)
+	var maximo: Vector3i = Vector3i(-999999, -999999, -999999)
+	for p in blocos:
+		var wp: Vector3i = base + _rot_schematic_pos(p, s)
+		# escrita RASTREADA (set_block): a construcao entra no save
+		if voxel_world.set_block(wp, str(blocos[p])):
+			colocados += 1
+			minimo = minimo.min(wp)
+			maximo = maximo.max(wp)
+		else:
+			fora += 1
+	if colocados > 0:
+		_queue_sections_aabb(minimo, maximo)
+	var extra: String = "" if fora == 0 else " (%d fora do mapa)" % fora
+	_message("Schematic aplicado: %d blocos%s. R gira, ESC encerra." % [colocados, extra])
+
+
+# ---------------- ferramenta de area (marcar, preencher, destruir) ----------------
+
+func _marcar_canto_selecao() -> void:
+	var hit = _get_target_block()
+	if hit == null or not hit.is_valid():
+		_message("Mire num bloco pra marcar o canto (R).")
+		return
+	if sel_count == 0 or sel_count >= 2:
+		sel_a = hit.pos
+		sel_count = 1
+		_message("Canto A em %s. Marque o canto B com R." % str(sel_a))
+	else:
+		sel_b = hit.pos
+		sel_count = 2
+		var t: Vector3i = (sel_b - sel_a).abs() + Vector3i.ONE
+		_message("Área %d x %d x %d. F preenche com o item da mão (mão vazia destrói). X cancela." % [t.x, t.y, t.z])
+	_update_selection_box()
+
+
+func _limpar_selecao(avisar: bool) -> void:
+	sel_count = 0
+	if sel_box != null and is_instance_valid(sel_box):
+		sel_box.visible = false
+	if avisar:
+		_message("Seleção de área limpa.")
+
+
+func _update_selection_box() -> void:
+	if sel_count == 0:
+		if sel_box != null and is_instance_valid(sel_box):
+			sel_box.visible = false
+		return
+	if sel_box == null or not is_instance_valid(sel_box):
+		sel_box = MeshInstance3D.new()
+		var caixa: BoxMesh = BoxMesh.new()
+		caixa.size = Vector3.ONE
+		sel_box.mesh = caixa
+		var mat: StandardMaterial3D = StandardMaterial3D.new()
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(1.0, 0.85, 0.2, 0.20)
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		sel_box.material_override = mat
+		world_root.add_child(sel_box)
+	var b: Vector3i = sel_b if sel_count == 2 else sel_a
+	var minimo: Vector3i = Vector3i(mini(sel_a.x, b.x), mini(sel_a.y, b.y), mini(sel_a.z, b.z))
+	var maximo: Vector3i = Vector3i(maxi(sel_a.x, b.x), maxi(sel_a.y, b.y), maxi(sel_a.z, b.z))
+	var tam: Vector3 = Vector3(maximo - minimo) + Vector3.ONE
+	sel_box.visible = true
+	sel_box.scale = tam + Vector3(0.04, 0.04, 0.04)
+	sel_box.position = Vector3(minimo) + tam * 0.5 - Vector3(0.5, 0.5, 0.5)
+
+
+func _preencher_selecao() -> void:
+	if sel_count < 2:
+		_message("Marque os dois cantos com R primeiro.")
+		return
+	if not creative_mode:
+		_message("A ferramenta de área só funciona no modo criativo (F4).")
+		return
+	var minimo: Vector3i = Vector3i(mini(sel_a.x, sel_b.x), mini(sel_a.y, sel_b.y), mini(sel_a.z, sel_b.z))
+	var maximo: Vector3i = Vector3i(maxi(sel_a.x, sel_b.x), maxi(sel_a.y, sel_b.y), maxi(sel_a.z, sel_b.z))
+	var volume: int = (maximo.x - minimo.x + 1) * (maximo.y - minimo.y + 1) * (maximo.z - minimo.z + 1)
+	if volume > 500000:
+		_message("Área grande demais (%d blocos; máximo 500 mil)." % volume)
+		return
+	var selected_item: String = _get_selected_hotbar_item()
+	var place_block: String = str((item_defs.get(selected_item, {}) as Dictionary).get("place_block", ""))
+	var alterados: int = 0
+	for y in range(minimo.y, maximo.y + 1):
+		for z in range(minimo.z, maximo.z + 1):
+			for x in range(minimo.x, maximo.x + 1):
+				var pos: Vector3i = Vector3i(x, y, z)
+				if place_block == "":
+					if voxel_world.get_block_id(pos) == "chest":
+						_erase_chest_inventory(pos)
+					if voxel_world.remove_block(pos):
+						alterados += 1
+				else:
+					if voxel_world.set_block(pos, place_block):
+						alterados += 1
+	_queue_sections_aabb(minimo, maximo)
+	if place_block == "":
+		_message("Área destruída: %d blocos removidos." % alterados)
+	else:
+		_message("Área preenchida com %s: %d blocos." % [_item_name(selected_item), alterados])
+	_limpar_selecao(false)
+
+
+func _queue_sections_aabb(minimo: Vector3i, maximo: Vector3i) -> void:
+	if voxel_sections == null or voxel_world == null:
+		return
+	var secoes: Dictionary = {}
+	var s0: Vector3i = voxel_world.get_section_coord(minimo - Vector3i.ONE)
+	var s1: Vector3i = voxel_world.get_section_coord(maximo + Vector3i.ONE)
+	for sy in range(s0.y, s1.y + 1):
+		for sz in range(s0.z, s1.z + 1):
+			for sx in range(s0.x, s1.x + 1):
+				var sec: Vector3i = Vector3i(sx, sy, sz)
+				if voxel_world.is_valid_section(sec):
+					secoes[sec] = true
+	voxel_sections.queue_sections(secoes.keys(), true)
+
+
+func _bounds_size() -> int:
+	return voxel_world.unlocked_size if voxel_world != null else BIOME_SIZE
+
+
 func _create_world_bounds() -> void:
+	var s: int = _bounds_size()
 	_add_world_wall(
 		"WorldWall_West",
-		Vector3(BIOME_MIN_X - 1, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, BIOME_SIZE * 0.5 - 0.5),
-		Vector3(1, WORLD_WALL_HEIGHT, BIOME_SIZE + 2)
+		Vector3(-1, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, s * 0.5 - 0.5),
+		Vector3(1, WORLD_WALL_HEIGHT, s + 2)
 	)
 	_add_world_wall(
 		"WorldWall_East",
-		Vector3(BIOME_MAX_X + 1, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, BIOME_SIZE * 0.5 - 0.5),
-		Vector3(1, WORLD_WALL_HEIGHT, BIOME_SIZE + 2)
+		Vector3(s, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, s * 0.5 - 0.5),
+		Vector3(1, WORLD_WALL_HEIGHT, s + 2)
 	)
 	_add_world_wall(
 		"WorldWall_North",
-		Vector3(BIOME_SIZE * 0.5 - 0.5, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, BIOME_MIN_Z - 1),
-		Vector3(BIOME_SIZE + 2, WORLD_WALL_HEIGHT, 1)
+		Vector3(s * 0.5 - 0.5, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, -1),
+		Vector3(s + 2, WORLD_WALL_HEIGHT, 1)
 	)
 	_add_world_wall(
 		"WorldWall_South",
-		Vector3(BIOME_SIZE * 0.5 - 0.5, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, BIOME_MAX_Z + 1),
-		Vector3(BIOME_SIZE + 2, WORLD_WALL_HEIGHT, 1)
+		Vector3(s * 0.5 - 0.5, BEDROCK_Y + WORLD_WALL_HEIGHT * 0.5, s),
+		Vector3(s + 2, WORLD_WALL_HEIGHT, 1)
 	)
 	_add_world_ceiling()
+
+
+func _rebuild_world_bounds() -> void:
+	if world_root == null:
+		return
+	for nome in ["WorldWall_West", "WorldWall_East", "WorldWall_North", "WorldWall_South", "WorldSkyBoundary"]:
+		var no: Node = world_root.get_node_or_null(nome)
+		if no != null:
+			no.queue_free()
+	_create_world_bounds()
 
 func _add_world_wall(wall_name: String, wall_position: Vector3, wall_size: Vector3) -> void:
 	var body: StaticBody3D = StaticBody3D.new()
@@ -939,12 +1422,13 @@ func _add_world_wall(wall_name: String, wall_position: Vector3, wall_size: Vecto
 func _add_world_ceiling() -> void:
 	# The top voxel layer is reserved for the later Skybreaker sequence.  It is
 	# a single static bound rather than thousands of ceiling-block colliders.
+	var s: int = _bounds_size()
 	var body: StaticBody3D = StaticBody3D.new()
 	body.name = "WorldSkyBoundary"
-	body.position = Vector3(BIOME_SIZE * 0.5 - 0.5, float(VoxelWorldScript.WORLD_MAX_Y) + 0.5, BIOME_SIZE * 0.5 - 0.5)
+	body.position = Vector3(s * 0.5 - 0.5, float(VoxelWorldScript.WORLD_MAX_Y) + 0.5, s * 0.5 - 0.5)
 	var collision: CollisionShape3D = CollisionShape3D.new()
 	var shape: BoxShape3D = BoxShape3D.new()
-	shape.size = Vector3(BIOME_SIZE + 2, 1.0, BIOME_SIZE + 2)
+	shape.size = Vector3(s + 2, 1.0, s + 2)
 	collision.shape = shape
 	body.add_child(collision)
 	world_root.add_child(body)
@@ -1155,6 +1639,7 @@ func _create_ui() -> void:
 	ui_layer.add_child(hotbar_box)
 
 	_create_inventory_panel()
+	_create_creative_panel()
 	_create_chest_panel()
 	_create_tooltip_panel()
 	_create_menu_panels()
@@ -1193,7 +1678,7 @@ func _make_menu_button(text: String, callback: Callable) -> Button:
 	return button
 
 func _create_menu_panels() -> void:
-	main_menu_panel = _make_center_menu_panel(Vector2(400, 430))
+	main_menu_panel = _make_center_menu_panel(Vector2(400, 480))
 	ui_layer.add_child(main_menu_panel)
 
 	var main_root: VBoxContainer = VBoxContainer.new()
@@ -1209,6 +1694,7 @@ func _create_menu_panels() -> void:
 	continue_button = _make_menu_button("Continuar", _continue_game)
 	main_root.add_child(continue_button)
 	main_root.add_child(_make_menu_button("Novo Jogo", _start_new_game))
+	main_root.add_child(_make_menu_button("Novo Mundo Superplano (Criativo)", _start_new_flat_world))
 	main_root.add_child(_make_menu_button("Editor de Terreno", _open_terrain_editor))
 	main_root.add_child(_make_menu_button("Estudio de Estruturas", _open_structure_studio))
 	main_root.add_child(_make_menu_button("Opcoes", _open_options_from_main))
@@ -1219,7 +1705,7 @@ func _create_menu_panels() -> void:
 	menu_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	main_root.add_child(menu_status_label)
 
-	pause_menu_panel = _make_center_menu_panel(Vector2(380, 360))
+	pause_menu_panel = _make_center_menu_panel(Vector2(380, 560))
 	pause_menu_panel.visible = false
 	ui_layer.add_child(pause_menu_panel)
 
@@ -1234,6 +1720,27 @@ func _create_menu_panels() -> void:
 	pause_root.add_child(pause_title)
 	pause_root.add_child(_make_menu_button("Voltar ao jogo", _resume_game))
 	pause_root.add_child(_make_menu_button("Salvar", _save_from_pause_menu))
+	pause_root.add_child(_make_menu_button("Importar Schematic (Minecraft)", _abrir_dialogo_schematic))
+
+	flat_size_row = VBoxContainer.new()
+	flat_size_row.add_theme_constant_override("separation", 4)
+	var flat_label: Label = Label.new()
+	flat_label.text = "Tamanho do mapa (superplano)"
+	flat_size_row.add_child(flat_label)
+	flat_size_value_label = Label.new()
+	flat_size_value_label.text = "100 x 100"
+	flat_size_row.add_child(flat_size_value_label)
+	flat_size_slider = HSlider.new()
+	flat_size_slider.min_value = 100
+	flat_size_slider.max_value = 200
+	flat_size_slider.step = 10
+	flat_size_slider.value = 100
+	flat_size_slider.value_changed.connect(func(v: float) -> void:
+		flat_size_value_label.text = "%d x %d" % [int(v), int(v)])
+	flat_size_row.add_child(flat_size_slider)
+	flat_size_row.add_child(_make_menu_button("Aplicar tamanho", _aplicar_tamanho_flat))
+	pause_root.add_child(flat_size_row)
+
 	pause_root.add_child(_make_menu_button("Opcoes", _open_options_from_pause))
 	pause_root.add_child(_make_menu_button("Menu inicial", _return_to_main_menu))
 
@@ -1339,6 +1846,16 @@ func _show_main_menu() -> void:
 		player.set_controls_enabled(false)
 
 func _start_new_game() -> void:
+	world_type = "normal"
+	creative_mode = false
+	flat_size = 100
+	_start_world_loading(false)
+
+
+func _start_new_flat_world() -> void:
+	world_type = "superflat"
+	creative_mode = true
+	flat_size = 100
 	_start_world_loading(false)
 
 
@@ -1360,7 +1877,9 @@ func _continue_game() -> void:
 
 func _start_world_loading(is_continue: bool) -> void:
 	continue_on_load_finish = is_continue
-	
+	if is_continue:
+		_peek_save_meta()  # tipo de mundo/tamanho precisam existir ANTES de gerar a base
+
 	if main_menu_panel != null:
 		main_menu_panel.visible = false
 	if pause_menu_panel != null:
@@ -1419,7 +1938,13 @@ func _start_world_loading(is_continue: bool) -> void:
 	target_outline = null
 	cached_target = null
 	cached_target_physics_frame = -1
-	
+	schematic_mode = false
+	schematic_data = {}
+	schematic_rot = 0
+	schematic_preview = null
+	sel_count = 0
+	sel_box = null
+
 	if world_root != null and is_instance_valid(world_root):
 		if voxel_sections != null:
 			voxel_sections.shutdown()
@@ -1443,7 +1968,7 @@ func _start_world_loading(is_continue: bool) -> void:
 				loading_panel.visible = false
 			return
 			
-	if not is_continue:
+	if not is_continue and world_type == "normal":
 		var spawn_surface_y: int = _surface_y_at(52, 52)
 		var spawn_chest_pos: Vector3i = Vector3i(52, spawn_surface_y + 1, 52)
 		_set_block(spawn_chest_pos, "chest")
@@ -1464,7 +1989,8 @@ func _finish_world_loading() -> void:
 	_create_world_bounds()
 	_apply_performance_profile()
 	_create_player()
-	
+	_sync_creative_player()
+
 	if continue_on_load_finish:
 		if not loaded_game_data.is_empty():
 			player.position = _vector3_from_data(loaded_game_data.get("player_position", []), player.position)
@@ -1515,6 +2041,14 @@ func _show_pause_menu() -> void:
 		options_panel.visible = false
 	if pause_status_label != null:
 		pause_status_label.text = ""
+	if creative_panel != null:
+		creative_panel.visible = false
+	if flat_size_row != null:
+		flat_size_row.visible = world_type == "superflat"
+		if world_type == "superflat" and voxel_world != null:
+			flat_size_slider.min_value = voxel_world.unlocked_size
+			flat_size_slider.value = voxel_world.unlocked_size
+			flat_size_value_label.text = "%d x %d" % [voxel_world.unlocked_size, voxel_world.unlocked_size]
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	player.set_controls_enabled(false)
 	_update_player_visual_visibility()
@@ -2135,8 +2669,13 @@ func _handle_block_breaking(delta: float) -> void:
 		return
 		
 	var block_data: Dictionary = block_defs.get(block_id, {})
-	if not bool(block_data.get("breakable", true)):
+	if not bool(block_data.get("breakable", true)) and not creative_mode:
 		_cancel_block_breaking()
+		return
+
+	if creative_mode:
+		# criativo quebra instantaneo, igual Minecraft
+		_complete_block_breaking(pos, hit.normal, block_id, block_data)
 		return
 
 	if pos != breaking_pos:
@@ -2174,7 +2713,7 @@ func _complete_block_breaking(pos: Vector3i, normal: Vector3i, block_id: String,
 	breaking_progress = 0.0
 	
 	var selected_item: String = _get_selected_hotbar_item()
-	var uses_manita_pickaxe: bool = selected_item == "manita_pickaxe"
+	var uses_manita_pickaxe: bool = selected_item == "manita_pickaxe" and not creative_mode
 	if uses_manita_pickaxe:
 		if mana < MANITA_PICKAXE_MANA_COST:
 			_message("Mana insuficiente para usar a Picareta de Manita.")
@@ -2202,7 +2741,7 @@ func _complete_block_breaking(pos: Vector3i, normal: Vector3i, block_id: String,
 		var removed_data: Dictionary = block_defs.get(removed_id, {}) as Dictionary
 		var drop_id: String = str(removed_data.get("drop", ""))
 		if removed_id == "chest": _erase_chest_inventory(removed_pos)
-		if drop_id != "":
+		if drop_id != "" and not creative_mode:
 			var spawn_pos: Vector3 = Vector3(removed_pos) + Vector3(0.0, 0.25, 0.0)
 			var spawn_vel: Vector3 = Vector3(randf_range(-1.0, 1.0), 2.5, randf_range(-1.0, 1.0))
 			_spawn_dropped_item(drop_id, 1, spawn_pos, spawn_vel)
@@ -2509,7 +3048,7 @@ func _use_or_place_target() -> bool:
 	if _would_block_player(target_pos):
 		_message("Nao da para colocar bloco dentro do jogador.")
 		return false
-	if _slot_count(inventory_slots[selected_hotbar_index]) <= 0:
+	if not creative_mode and _slot_count(inventory_slots[selected_hotbar_index]) <= 0:
 		_message("Sem %s no slot selecionado." % _item_name(selected_item))
 		return false
 
@@ -2517,7 +3056,8 @@ func _use_or_place_target() -> bool:
 	if not bool(edit.succeeded):
 		if str(edit.reason) == "missing_solid_support": _message("Plantas precisam de um bloco solido abaixo.")
 		return false
-	_remove_from_slot(inventory_slots, selected_hotbar_index, 1)
+	if not creative_mode:
+		_remove_from_slot(inventory_slots, selected_hotbar_index, 1)
 	if place_block == "chest":
 		_set_chest_inventory(target_pos, _make_slots(CHEST_SLOT_COUNT))
 	if player != null:
@@ -2598,6 +3138,8 @@ func _close_all_panels() -> void:
 	_return_craft_slots_to_inventory()
 	inventory_panel.visible = false
 	chest_panel.visible = false
+	if creative_panel != null:
+		creative_panel.visible = false
 	has_current_chest = false
 	_set_ui_mode(false)
 	_update_all_ui()
@@ -2651,6 +3193,15 @@ func slot_mouse_exited(slot_type: String, slot_index: int) -> void:
 func _handle_left_slot_press(slot_type: String, slot_index: int) -> void:
 	if not _is_valid_slot(slot_type, slot_index):
 		return
+	if slot_type == "creative":
+		# clique pega um stack de 64; com item na mao, descarta (lixeira do criativo)
+		if _slot_item(cursor_stack) == "":
+			cursor_stack = {"item": str(creative_items[slot_index]), "count": 64}
+		else:
+			cursor_stack = _empty_slot()
+		_update_all_ui()
+		_update_cursor_stack_label()
+		return
 	if _slot_item(cursor_stack) == "":
 		var slot: Dictionary = _get_slot(slot_type, slot_index)
 		if _slot_item(slot) == "":
@@ -2667,6 +3218,16 @@ func _handle_left_slot_press(slot_type: String, slot_index: int) -> void:
 
 func _handle_right_slot_press(slot_type: String, slot_index: int) -> void:
 	if not _is_valid_slot(slot_type, slot_index):
+		return
+	if slot_type == "creative":
+		# clique direito pega 1 (ou incrementa se ja segura o mesmo item)
+		var id_criativo: String = str(creative_items[slot_index])
+		if _slot_item(cursor_stack) == "":
+			cursor_stack = {"item": id_criativo, "count": 1}
+		elif _slot_item(cursor_stack) == id_criativo:
+			cursor_stack["count"] = mini(64, _slot_count(cursor_stack) + 1)
+		_update_all_ui()
+		_update_cursor_stack_label()
 		return
 	if _slot_item(cursor_stack) == "":
 		var slot: Dictionary = _get_slot(slot_type, slot_index)
@@ -2806,7 +3367,7 @@ func _add_amount_to_slot(slot_type: String, slot_index: int, item_id: String, am
 	_set_slot(slot_type, slot_index, slot)
 
 func _can_accept_cursor(slot_type: String, slot_index: int) -> bool:
-	if slot_type == "craft_output":
+	if slot_type == "craft_output" or slot_type == "creative":
 		return false
 	if _slot_item(cursor_stack) == "" or not _is_valid_slot(slot_type, slot_index):
 		return false
@@ -2817,12 +3378,18 @@ func _slot_key(slot_type: String, slot_index: int) -> String:
 	return "%s:%s" % [slot_type, slot_index]
 
 func _is_valid_slot(slot_type: String, slot_index: int) -> bool:
+	if slot_type == "creative":
+		return slot_index >= 0 and slot_index < creative_items.size()
 	if slot_type == "craft_output":
 		return slot_index == 0 and _slot_item(_current_craft_output_slot()) != ""
 	var slots: Array = _get_slots_for_type(slot_type)
 	return slot_index >= 0 and slot_index < slots.size()
 
 func _get_slot(slot_type: String, slot_index: int) -> Dictionary:
+	if slot_type == "creative":
+		if slot_index >= 0 and slot_index < creative_items.size():
+			return {"item": str(creative_items[slot_index]), "count": 64}
+		return _empty_slot()
 	if slot_type == "craft_output":
 		return _current_craft_output_slot()
 	var slots: Array = _get_slots_for_type(slot_type)
@@ -2832,7 +3399,7 @@ func _get_slot(slot_type: String, slot_index: int) -> Dictionary:
 	return slot
 
 func _set_slot(slot_type: String, slot_index: int, slot: Dictionary) -> void:
-	if slot_type == "craft_output":
+	if slot_type == "craft_output" or slot_type == "creative":
 		return
 	var slots: Array = _get_slots_for_type(slot_type)
 	if slot_index < 0 or slot_index >= slots.size():
@@ -2907,6 +3474,11 @@ func _take_craft_output() -> void:
 	_update_cursor_stack_label()
 
 func _handle_shift_click(slot_type: String, slot_index: int) -> void:
+	if slot_type == "creative":
+		if _is_valid_slot("creative", slot_index):
+			_add_item(str(creative_items[slot_index]), 64)
+			_update_all_ui()
+		return
 	if slot_type == "craft_output":
 		_take_craft_output_to_inventory()
 		return
@@ -3217,7 +3789,11 @@ func _save_game_state() -> bool:
 		"manita_pickaxe_xp": manita_pickaxe_xp,
 		"manita_pickaxe_level": manita_pickaxe_level,
 		"time_of_day": time_of_day,
-		"day_count": day_count
+		"day_count": day_count,
+		"world_type": world_type,
+		"flat_size": voxel_world.unlocked_size,
+		"flat_surface_y": flat_surface_y,
+		"creative_mode": creative_mode
 	}
 
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
@@ -3273,6 +3849,7 @@ func _load_game_state() -> bool:
 	manita_pickaxe_level = max(1, int(data.get("manita_pickaxe_level", 1)))
 	time_of_day = clamp(float(data.get("time_of_day", 8.0)), 0.0, 24.0)
 	day_count = max(1, int(data.get("day_count", 1)))
+	creative_mode = bool(data.get("creative_mode", false))
 	for raw_pos in voxel_world.get_metadata_positions(CHEST_METADATA_KEY):
 		var chest_pos: Vector3i = raw_pos
 		if voxel_world.get_block_id(chest_pos) == "chest":
@@ -3369,6 +3946,8 @@ func _update_all_ui() -> void:
 		_update_inventory_panel()
 	if chest_panel.visible:
 		_update_chest_panel()
+	if creative_panel != null and creative_panel.visible:
+		_update_creative_panel()
 	_update_player_visual_visibility()
 
 func _sync_held_item(force: bool = false) -> void:

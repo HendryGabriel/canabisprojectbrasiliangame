@@ -41,6 +41,9 @@ var landing_bob: float = 0.0
 var collision_shape_node: CollisionShape3D = null
 var health: float = 20.0
 var dead: bool = false
+var can_fly: bool = false        # modo criativo: espaco duplo alterna voo
+var invulnerable: bool = false   # modo criativo: sem dano
+var _last_space_ms: int = -10000
 
 func _ready() -> void:
 	health = clampf(health, 0.0, max_health)
@@ -78,7 +81,7 @@ func _ready() -> void:
 	health_changed.emit(health, max_health)
 
 func take_damage(amount: float) -> void:
-	if dead or amount <= 0.0:
+	if dead or amount <= 0.0 or invulnerable:
 		return
 	health = maxf(0.0, health - amount)
 	health_changed.emit(health, max_health)
@@ -95,6 +98,15 @@ func restore_health(value: float = -1.0) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not controls_enabled:
 		return
+	# espaco duplo alterna o voo criativo (igual Minecraft)
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_SPACE and can_fly:
+		var agora: int = Time.get_ticks_msec()
+		if agora - _last_space_ms <= 300:
+			creative_flight = not creative_flight
+			velocity = Vector3.ZERO
+			_last_space_ms = -10000
+		else:
+			_last_space_ms = agora
 	if event is InputEventMouseMotion and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * mouse_sensitivity
 		pitch -= event.relative.y * mouse_sensitivity

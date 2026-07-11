@@ -127,9 +127,17 @@ func is_inside_world(pos: Vector3i) -> bool:
 
 
 ## Only Biome 1 is currently generated and playable.  The rest of the fixed
-## 200x200 grid remains reserved for future content.
+## 200x200 grid remains reserved for future content.  Superflat/creative worlds
+## can grow the unlocked area at runtime up to the full 200x200 grid.
+var unlocked_size: int = BIOME_SIZE
+
+
+func set_unlocked_size(value: int) -> void:
+	unlocked_size = clampi(value, BIOME_SIZE, WORLD_WIDTH)
+
+
 func is_inside_unlocked_biome(pos: Vector3i) -> bool:
-	return is_inside_world(pos) and pos.x >= 0 and pos.x < BIOME_SIZE and pos.z >= 0 and pos.z < BIOME_SIZE
+	return is_inside_world(pos) and pos.x >= 0 and pos.x < unlocked_size and pos.z >= 0 and pos.z < unlocked_size
 
 
 func is_buildable(pos: Vector3i) -> bool:
