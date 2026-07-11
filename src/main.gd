@@ -15,7 +15,9 @@ const LightRegistryScript = preload("res://src/light_registry.gd")
 const ThumbstoneScript = preload("res://src/thumbstone.gd")
 const SchematicImporterScript = preload("res://src/schematic_importer.gd")
 const SceneryDataScript = preload("res://src/scenery_data.gd")
+const BlueprintDataScript = preload("res://src/blueprint_data.gd")
 const SCENERY_DIR: String = "res://data/scenery/"
+const BLUEPRINT_DIR: String = "res://data/blueprints/"
 
 const BIOME_SIZE: int = 100
 const SURFACE_BASE_Y: int = 0
@@ -161,6 +163,13 @@ var sel_a: Vector3i = Vector3i.ZERO
 var sel_b: Vector3i = Vector3i.ZERO
 var sel_count: int = 0
 var sel_box: MeshInstance3D = null
+# blueprints multibloco (estilo Satisfactory)
+var blueprint_menu: PanelContainer
+var blueprint_mode: bool = false
+var active_blueprint = null
+var bp_rot: int = 0
+var bp_ghost: MeshInstance3D = null
+var construction_sites: Array = []   # [{bp, base, rot, next_layer, ghost}]
 
 var player: TrumanPlayer
 var world_root: Node3D
@@ -259,7 +268,7 @@ func _process(delta: float) -> void:
 	if player != null and is_instance_valid(player) and player.is_inside_tree():
 		# Handle held left-click block breaking & held right-click block placing
 		if game_started and not _is_menu_open() and not inventory_panel.visible and not chest_panel.visible and not (creative_panel != null and creative_panel.visible):
-			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not left_click_consumed and not schematic_mode and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
+			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not left_click_consumed and not schematic_mode and not blueprint_mode and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 				_handle_block_breaking(delta)
 			else:
 				_cancel_block_breaking()
@@ -272,6 +281,7 @@ func _process(delta: float) -> void:
 			_cancel_block_breaking()
 		_update_target_outline()
 		_update_schematic_preview()
+		_update_blueprint_preview()
 	_update_cursor_stack_label()
 	_update_hover_tooltip_position()
 	_update_status()
@@ -301,6 +311,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			elif pause_menu_panel != null and pause_menu_panel.visible:
 				_resume_game()
+			elif blueprint_mode:
+				_cancelar_blueprint()
+			elif blueprint_menu != null and blueprint_menu.visible:
+				blueprint_menu.visible = false
+				_set_ui_mode(false)
 			elif schematic_mode:
 				_cancelar_schematic()
 			elif inventory_panel.visible or chest_panel.visible or (creative_panel != null and creative_panel.visible):
@@ -323,11 +338,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_F4:
 			_toggle_creative_mode()
 			return
+		if event.keycode == KEY_F3:
+			_toggle_blueprint_menu()
+			return
+		if event.keycode == KEY_G:
+			_entregar_material_para_obra()
+			return
 		if Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 			if event.keycode == KEY_R:
 				if schematic_mode:
 					schematic_rot = (schematic_rot + 1) % 4
 					_message("Schematic girado para %d graus." % (schematic_rot * 90))
+				elif blueprint_mode:
+					bp_rot = (bp_rot + 1) % 4
+					_message("Projeto girado para %d graus." % (bp_rot * 90))
 				else:
 					_marcar_canto_selecao()
 				return
@@ -336,6 +360,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			if event.keycode == KEY_X:
 				_limpar_selecao(true)
+				return
+			if event.keycode == KEY_B:
+				_salvar_selecao_como_blueprint()
 				return
 		if event.keycode == KEY_Q:
 			_drop_selected_item()
@@ -370,6 +397,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
+			if blueprint_mode:
+				_posicionar_obra()
+				left_click_consumed = true
+				get_viewport().set_input_as_handled()
+				return
 			if schematic_mode:
 				_estampar_schematic()
 				left_click_consumed = true
@@ -1495,6 +1527,259 @@ func _preencher_selecao() -> void:
 	else:
 		_message("Área preenchida com %s: %d blocos." % [_item_name(selected_item), alterados])
 	_limpar_selecao(false)
+
+
+# ---------------- blueprints multibloco (estilo Satisfactory) ----------------
+
+func _salvar_selecao_como_blueprint() -> void:
+	# DEV: captura a area selecionada (2 cantos) como molde de maquina
+	if sel_count < 2:
+		_message("Marque a área da máquina com R (2 cantos) antes de salvar o projeto (B).")
+		return
+	var minimo: Vector3i = Vector3i(mini(sel_a.x, sel_b.x), mini(sel_a.y, sel_b.y), mini(sel_a.z, sel_b.z))
+	var maximo: Vector3i = Vector3i(maxi(sel_a.x, sel_b.x), maxi(sel_a.y, sel_b.y), maxi(sel_a.z, sel_b.z))
+	DirAccess.make_dir_recursive_absolute(BLUEPRINT_DIR)
+	var n: int = 1
+	while FileAccess.file_exists(BLUEPRINT_DIR + "maquina_%d.json" % n):
+		n += 1
+	var nome: String = "Maquina %d" % n
+	var bp = BlueprintDataScript.capturar(voxel_world, minimo, maximo, nome)
+	if bp.blocks.is_empty():
+		_message("A área selecionada está vazia — construa a máquina primeiro.")
+		return
+	if bp.save_to_file(BLUEPRINT_DIR + "maquina_%d.json" % n):
+		_message("Projeto salvo: %s (%d blocos). Jogadores acham em F3." % [nome, bp.blocks.size()])
+		_limpar_selecao(false)
+
+
+func _toggle_blueprint_menu() -> void:
+	if blueprint_menu == null:
+		_create_blueprint_menu()
+	if blueprint_menu.visible:
+		blueprint_menu.visible = false
+		_set_ui_mode(false)
+	else:
+		_preencher_blueprint_menu()
+		blueprint_menu.visible = true
+		_set_ui_mode(true)
+
+
+func _create_blueprint_menu() -> void:
+	blueprint_menu = PanelContainer.new()
+	blueprint_menu.visible = false
+	blueprint_menu.position = Vector2(360, 90)
+	blueprint_menu.custom_minimum_size = Vector2(560, 420)
+	_apply_square_panel_style(blueprint_menu)
+	ui_layer.add_child(blueprint_menu)
+
+
+func _preencher_blueprint_menu() -> void:
+	_clear_children(blueprint_menu)
+	var root: VBoxContainer = VBoxContainer.new()
+	root.add_theme_constant_override("separation", 8)
+	blueprint_menu.add_child(root)
+	var titulo: Label = Label.new()
+	titulo.text = "Projetos de Máquina"
+	titulo.add_theme_font_size_override("font_size", 20)
+	root.add_child(titulo)
+	var dica: Label = Label.new()
+	dica.text = "Escolha um projeto, posicione o holograma (clique), gire com R, e entregue os materiais camada por camada com G."
+	dica.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(dica)
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(540, 320)
+	root.add_child(scroll)
+	var lista: VBoxContainer = VBoxContainer.new()
+	scroll.add_child(lista)
+	var dir: DirAccess = DirAccess.open(BLUEPRINT_DIR)
+	var achou: bool = false
+	if dir != null:
+		for arquivo in dir.get_files():
+			if not arquivo.ends_with(".json"):
+				continue
+			var bp = BlueprintDataScript.load_from_file(BLUEPRINT_DIR + arquivo)
+			if bp == null:
+				continue
+			achou = true
+			var custo: Dictionary = bp.custo()
+			var texto_custo: PackedStringArray = PackedStringArray()
+			for id_bloco in custo:
+				texto_custo.append("%dx %s" % [custo[id_bloco], _item_name(str((block_defs.get(id_bloco, {}) as Dictionary).get("drop", id_bloco)))])
+			var botao: Button = _make_menu_button("%s  (%dx%dx%d)  —  %s" % [bp.display_name, bp.size.x, bp.size.y, bp.size.z, ", ".join(texto_custo)], func() -> void:
+				_iniciar_blueprint(bp))
+			lista.add_child(botao)
+	if not achou:
+		var vazio: Label = Label.new()
+		vazio.text = "Nenhum projeto ainda. Um dev cria assim: modo criativo (F4), constrói a máquina, seleciona a área com R (2 cantos) e salva com B."
+		vazio.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lista.add_child(vazio)
+	root.add_child(_make_menu_button("Fechar (F3)", _toggle_blueprint_menu))
+
+
+func _iniciar_blueprint(bp) -> void:
+	active_blueprint = bp
+	bp_rot = 0
+	blueprint_mode = true
+	blueprint_menu.visible = false
+	_set_ui_mode(false)
+	_message("Posicione o holograma de %s: clique coloca a obra, R gira, ESC cancela." % bp.display_name)
+
+
+func _cancelar_blueprint() -> void:
+	blueprint_mode = false
+	active_blueprint = null
+	if bp_ghost != null and is_instance_valid(bp_ghost):
+		bp_ghost.queue_free()
+	bp_ghost = null
+	_message("Colocação de projeto cancelada.")
+
+
+func _blueprint_base() -> Vector3i:
+	var hit = _get_target_block()
+	if hit == null or not hit.is_valid() or active_blueprint == null:
+		return Vector3i(-9999, -9999, -9999)
+	var s: Vector3i = active_blueprint.size_rotacionado(bp_rot)
+	return hit.pos + Vector3i(-int(s.x / 2.0), 1, -int(s.z / 2.0))
+
+
+func _update_blueprint_preview() -> void:
+	if not blueprint_mode or active_blueprint == null:
+		if bp_ghost != null and is_instance_valid(bp_ghost):
+			bp_ghost.visible = false
+		return
+	var base: Vector3i = _blueprint_base()
+	if base.y < -9000:
+		if bp_ghost != null and is_instance_valid(bp_ghost):
+			bp_ghost.visible = false
+		return
+	if bp_ghost == null or not is_instance_valid(bp_ghost):
+		bp_ghost = MeshInstance3D.new()
+		bp_ghost.mesh = BoxMesh.new()
+		var mat: StandardMaterial3D = StandardMaterial3D.new()
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(0.3, 0.7, 1.0, 0.22)
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		bp_ghost.material_override = mat
+		world_root.add_child(bp_ghost)
+	var s: Vector3i = active_blueprint.size_rotacionado(bp_rot)
+	bp_ghost.visible = true
+	bp_ghost.scale = Vector3(s)
+	bp_ghost.position = Vector3(base) + Vector3(s) * 0.5 - Vector3(0.5, 0.5, 0.5)
+
+
+func _posicionar_obra() -> void:
+	var base: Vector3i = _blueprint_base()
+	if base.y < -9000:
+		_message("Mire num bloco pra assentar a obra.")
+		return
+	var s: Vector3i = active_blueprint.size_rotacionado(bp_rot)
+	# cria o canteiro de obras (holograma fantasma que enche conforme entrega material)
+	var ghost: MeshInstance3D = MeshInstance3D.new()
+	ghost.mesh = BoxMesh.new()
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.9, 0.75, 0.2, 0.16)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	ghost.material_override = mat
+	ghost.scale = Vector3(s)
+	ghost.position = Vector3(base) + Vector3(s) * 0.5 - Vector3(0.5, 0.5, 0.5)
+	world_root.add_child(ghost)
+	construction_sites.append({"bp": active_blueprint, "base": base, "rot": bp_rot, "next_layer": 0, "ghost": ghost})
+	blueprint_mode = false
+	if bp_ghost != null and is_instance_valid(bp_ghost):
+		bp_ghost.queue_free()
+	bp_ghost = null
+	_message("Canteiro de obras criado. Aproxime, segure o material e aperte G pra entregar cada camada.")
+
+
+func _entregar_material_para_obra() -> void:
+	# entrega a proxima camada da obra mais proxima (dentro de 8 blocos)
+	if construction_sites.is_empty() or player == null:
+		return
+	var alvo: Dictionary = {}
+	var melhor: float = 8.0
+	for site in construction_sites:
+		var s: Vector3i = site["bp"].size_rotacionado(site["rot"])
+		var centro: Vector3 = Vector3(site["base"]) + Vector3(s) * 0.5
+		var d: float = player.global_position.distance_to(centro)
+		if d < melhor:
+			melhor = d
+			alvo = site
+	if alvo.is_empty():
+		_message("Chegue mais perto de um canteiro de obras (G).")
+		return
+	var bp = alvo["bp"]
+	var camada: int = alvo["next_layer"]
+	var custo: Dictionary = bp.custo_camada(camada)
+	if custo.is_empty():
+		# camada vazia, avanca de graca
+		alvo["next_layer"] = camada + 1
+		_pos_entrega(alvo)
+		return
+	# no criativo, entrega de graca; senao precisa dos itens no inventario
+	if not creative_mode:
+		for id_bloco in custo:
+			var item_id: String = _item_para_bloco(id_bloco)
+			if _item_total(item_id) < int(custo[id_bloco]):
+				_message("Faltam materiais para a camada %d: %dx %s." % [camada + 1, custo[id_bloco], _item_name(item_id)])
+				return
+		for id_bloco in custo:
+			_consumir_item(_item_para_bloco(id_bloco), int(custo[id_bloco]))
+	# coloca os blocos da camada
+	var minimo: Vector3i = Vector3i(999999, 999999, 999999)
+	var maximo: Vector3i = Vector3i(-999999, -999999, -999999)
+	for b in bp.blocos_camada_mundo(camada, alvo["base"], alvo["rot"]):
+		if voxel_world.set_block(b["pos"], b["id"]):
+			minimo = minimo.min(b["pos"])
+			maximo = maximo.max(b["pos"])
+	if maximo.x >= minimo.x:
+		_queue_sections_aabb(minimo, maximo)
+	alvo["next_layer"] = camada + 1
+	_pos_entrega(alvo)
+
+
+func _pos_entrega(site: Dictionary) -> void:
+	var bp = site["bp"]
+	if site["next_layer"] >= bp.size.y:
+		# obra concluida
+		if is_instance_valid(site["ghost"]):
+			site["ghost"].queue_free()
+		construction_sites.erase(site)
+		var pts: int = bp.functional.size()
+		_message("Máquina %s construída!%s" % [bp.display_name, (" %d pontos funcionais ativos." % pts) if pts > 0 else ""])
+	else:
+		# sobe o holograma pra mostrar o progresso
+		var s: Vector3i = bp.size_rotacionado(site["rot"])
+		var restante: int = bp.size.y - site["next_layer"]
+		var g: MeshInstance3D = site["ghost"]
+		g.scale = Vector3(s.x, restante, s.z)
+		g.position = Vector3(site["base"]) + Vector3(s.x, 0, s.z) * 0.5 + Vector3(0, site["next_layer"] + restante * 0.5, 0) - Vector3(0.5, 0.5, 0.5)
+		_message("Camada %d/%d entregue. Continue com G." % [site["next_layer"], bp.size.y])
+
+
+func _item_para_bloco(block_id: String) -> String:
+	var drop: String = str((block_defs.get(block_id, {}) as Dictionary).get("drop", ""))
+	if drop != "" and item_defs.has(drop):
+		return drop
+	# procura um item que coloca esse bloco
+	for item_id in item_defs:
+		if str((item_defs[item_id] as Dictionary).get("place_block", "")) == block_id:
+			return item_id
+	return block_id
+
+
+func _consumir_item(item_id: String, quantidade: int) -> void:
+	var restante: int = quantidade
+	for i in range(inventory_slots.size()):
+		if restante <= 0:
+			break
+		if _slot_item(inventory_slots[i]) == item_id:
+			var tira: int = mini(restante, _slot_count(inventory_slots[i]))
+			_remove_from_slot(inventory_slots, i, tira)
+			restante -= tira
+	_update_all_ui()
 
 
 func _queue_sections_aabb(minimo: Vector3i, maximo: Vector3i) -> void:
