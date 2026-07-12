@@ -163,6 +163,22 @@ var sel_a: Vector3i = Vector3i.ZERO
 var sel_b: Vector3i = Vector3i.ZERO
 var sel_count: int = 0
 var sel_box: MeshInstance3D = null
+# construtor de mundo (dev constroi o mapa que o jogador real recebe)
+const BUILDER_DIR: String = "user://builder_worlds/"
+const OFFICIAL_MAP_PATH: String = "res://data/world/mapa_oficial.json"
+var builder_mode: bool = false
+var builder_world_name: String = ""
+var builder_pending: Dictionary = {}
+var builder_panel: PanelContainer
+var builder_list: ItemList
+var builder_status: Label
+var builder_create_panel: PanelContainer
+var builder_name_edit: LineEdit
+var builder_type_button: Button
+var builder_type_flat: bool = false
+var publicar_button: Button
+var _mapa_oficial_cache: Dictionary = {}
+var _mapa_oficial_lido: bool = false
 # blueprints multibloco (estilo Satisfactory)
 var blueprint_menu: PanelContainer
 var blueprint_mode: bool = false
@@ -307,6 +323,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE:
 			if options_panel != null and options_panel.visible:
 				_close_options_panel()
+			elif builder_create_panel != null and builder_create_panel.visible:
+				builder_create_panel.visible = false
+				builder_panel.visible = true
+			elif builder_panel != null and builder_panel.visible:
+				builder_panel.visible = false
+				_show_main_menu()
 			elif main_menu_panel != null and main_menu_panel.visible:
 				return
 			elif pause_menu_panel != null and pause_menu_panel.visible:
@@ -1008,6 +1030,7 @@ func _generate_biome_one_data() -> void:
 	if not last_generation_report.is_ok():
 		push_error(last_generation_report.summary())
 	_construir_cidade(altura_cidade)
+	_aplicar_mapa_oficial()
 	for z in range(TerrainTileDataScript.TILE_SIZE):
 		for x in range(TerrainTileDataScript.TILE_SIZE):
 			surface_heights[Vector2i(x, z)] = active_terrain_tile.get_height(x, z)
@@ -1154,6 +1177,11 @@ func _construir_praca(cx: int, cz: int, altura: int) -> void:
 func _generate_superflat_data() -> void:
 	surface_heights.clear()
 	_clear_chest_inventories()
+	# se ha mapa oficial superplano publicado, novos jogos herdam o tamanho dele
+	if not builder_mode:
+		var oficial: Dictionary = _carregar_mapa_oficial()
+		if str(oficial.get("world_type", "")) == "superflat":
+			flat_size = clampi(maxi(flat_size, int(oficial.get("flat_size", 100))), 100, VoxelWorldScript.WORLD_WIDTH)
 	var tile = TerrainTileDataScript.new()
 	tile.tile_coord = Vector2i.ZERO
 	tile.draft_seed = WORLD_SEED
@@ -1179,6 +1207,7 @@ func _generate_superflat_data() -> void:
 			for z in range(flat_size):
 				if x >= TerrainTileDataScript.TILE_SIZE or z >= TerrainTileDataScript.TILE_SIZE:
 					_gera_coluna_flat(x, z)
+	_aplicar_mapa_oficial()
 
 
 func _gera_coluna_flat(x: int, z: int) -> void:
@@ -1237,6 +1266,251 @@ func _peek_save_meta() -> void:
 	flat_size = clampi(int(dados.get("flat_size", 100)), 100, VoxelWorldScript.WORLD_WIDTH)
 	flat_surface_y = int(dados.get("flat_surface_y", 0))
 	creative_mode = bool(dados.get("creative_mode", false))
+
+
+# ---------------- construtor de mundo (dev -> mapa do jogador) ----------------
+
+func _create_builder_panels() -> void:
+	# lista de mundos (estilo Singleplayer do Minecraft)
+	builder_panel = _make_center_menu_panel(Vector2(520, 560))
+	builder_panel.visible = false
+	ui_layer.add_child(builder_panel)
+	var root: VBoxContainer = VBoxContainer.new()
+	root.add_theme_constant_override("separation", 10)
+	builder_panel.add_child(root)
+	var titulo: Label = Label.new()
+	titulo.text = "Construtor de Mundo"
+	titulo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	titulo.add_theme_font_size_override("font_size", 26)
+	titulo.add_theme_color_override("font_outline_color", Color(0.1, 0.1, 0.12))
+	titulo.add_theme_constant_override("outline_size", 5)
+	root.add_child(titulo)
+	var sub: Label = Label.new()
+	sub.text = "O mundo salvo aqui pode ser publicado como o mapa que o jogador real recebe."
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(sub)
+	builder_list = ItemList.new()
+	builder_list.custom_minimum_size = Vector2(480, 220)
+	root.add_child(builder_list)
+	var linha1: HBoxContainer = HBoxContainer.new()
+	linha1.add_theme_constant_override("separation", 8)
+	root.add_child(linha1)
+	var b_jogar: Button = _make_menu_button("Jogar Mundo Selecionado", _builder_play_selected)
+	b_jogar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	linha1.add_child(b_jogar)
+	var b_criar: Button = _make_menu_button("Criar Novo Mundo", _builder_open_create)
+	b_criar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	linha1.add_child(b_criar)
+	var linha2: HBoxContainer = HBoxContainer.new()
+	linha2.add_theme_constant_override("separation", 8)
+	root.add_child(linha2)
+	var b_publicar: Button = _make_menu_button("Publicar p/ Jogadores", _builder_publish_selected)
+	b_publicar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	linha2.add_child(b_publicar)
+	var b_apagar: Button = _make_menu_button("Apagar", _builder_delete_selected)
+	b_apagar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	linha2.add_child(b_apagar)
+	builder_status = Label.new()
+	builder_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(builder_status)
+	root.add_child(_make_menu_button("Voltar", func() -> void:
+		builder_panel.visible = false
+		_show_main_menu()))
+
+	# criar novo mundo (estilo Create New World do Minecraft)
+	builder_create_panel = _make_center_menu_panel(Vector2(460, 380))
+	builder_create_panel.visible = false
+	ui_layer.add_child(builder_create_panel)
+	var croot: VBoxContainer = VBoxContainer.new()
+	croot.add_theme_constant_override("separation", 12)
+	builder_create_panel.add_child(croot)
+	var ctitulo: Label = Label.new()
+	ctitulo.text = "Criar Novo Mundo"
+	ctitulo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ctitulo.add_theme_font_size_override("font_size", 24)
+	croot.add_child(ctitulo)
+	var nome_label: Label = Label.new()
+	nome_label.text = "Nome do Mundo"
+	croot.add_child(nome_label)
+	builder_name_edit = LineEdit.new()
+	builder_name_edit.text = "Novo Mundo"
+	builder_name_edit.custom_minimum_size = Vector2(0, 38)
+	croot.add_child(builder_name_edit)
+	builder_type_button = _make_menu_button("Tipo de Mundo: Normal", _builder_cycle_type)
+	croot.add_child(builder_type_button)
+	croot.add_child(_make_menu_button("Criar Mundo", _builder_confirm_create))
+	croot.add_child(_make_menu_button("Voltar", func() -> void:
+		builder_create_panel.visible = false
+		builder_panel.visible = true))
+
+
+func _show_builder_menu() -> void:
+	main_menu_panel.visible = false
+	builder_create_panel.visible = false
+	builder_panel.visible = true
+	builder_status.text = ""
+	_refresh_builder_list()
+
+
+func _refresh_builder_list() -> void:
+	builder_list.clear()
+	DirAccess.make_dir_recursive_absolute(BUILDER_DIR)
+	var dir: DirAccess = DirAccess.open(BUILDER_DIR)
+	if dir == null:
+		return
+	var nomes: Array = []
+	for arquivo in dir.get_files():
+		if arquivo.ends_with(".json"):
+			nomes.append(arquivo)
+	nomes.sort()
+	for arquivo in nomes:
+		builder_list.add_item(arquivo.trim_suffix(".json"))
+
+
+func _builder_selected_file() -> String:
+	var sel: PackedInt32Array = builder_list.get_selected_items()
+	if sel.is_empty():
+		return ""
+	return BUILDER_DIR + builder_list.get_item_text(sel[0]) + ".json"
+
+
+func _builder_open_create() -> void:
+	builder_panel.visible = false
+	builder_create_panel.visible = true
+	builder_type_flat = false
+	builder_type_button.text = "Tipo de Mundo: Normal"
+
+
+func _builder_cycle_type() -> void:
+	builder_type_flat = not builder_type_flat
+	builder_type_button.text = "Tipo de Mundo: Superplano" if builder_type_flat else "Tipo de Mundo: Normal"
+
+
+func _builder_confirm_create() -> void:
+	var nome: String = builder_name_edit.text.strip_edges()
+	if nome == "":
+		nome = "Novo Mundo"
+	builder_world_name = nome
+	builder_mode = true
+	creative_mode = true
+	world_type = "superflat" if builder_type_flat else "normal"
+	flat_size = 100
+	builder_pending = {}
+	builder_create_panel.visible = false
+	_start_world_loading(false)
+
+
+func _builder_play_selected() -> void:
+	var caminho: String = _builder_selected_file()
+	if caminho == "":
+		builder_status.text = "Selecione um mundo na lista."
+		return
+	var arquivo: FileAccess = FileAccess.open(caminho, FileAccess.READ)
+	if arquivo == null:
+		builder_status.text = "Nao foi possivel abrir o mundo."
+		return
+	var json: JSON = JSON.new()
+	if json.parse(arquivo.get_as_text()) != OK or typeof(json.data) != TYPE_DICTIONARY:
+		builder_status.text = "Arquivo de mundo corrompido."
+		return
+	var dados: Dictionary = json.data
+	builder_pending = dados
+	builder_world_name = str(dados.get("name", builder_list.get_item_text(builder_list.get_selected_items()[0])))
+	builder_mode = true
+	creative_mode = true
+	world_type = str(dados.get("world_type", "normal"))
+	flat_size = clampi(int(dados.get("flat_size", 100)), 100, VoxelWorldScript.WORLD_WIDTH)
+	flat_surface_y = int(dados.get("flat_surface_y", 0))
+	builder_panel.visible = false
+	_start_world_loading(false)
+
+
+func _builder_delete_selected() -> void:
+	var caminho: String = _builder_selected_file()
+	if caminho == "":
+		builder_status.text = "Selecione um mundo pra apagar."
+		return
+	DirAccess.remove_absolute(caminho)
+	_refresh_builder_list()
+	builder_status.text = "Mundo apagado."
+
+
+func _builder_publish_selected() -> void:
+	var caminho: String = _builder_selected_file()
+	if caminho == "":
+		builder_status.text = "Selecione o mundo que sera o mapa dos jogadores."
+		return
+	if _publicar_arquivo(caminho):
+		builder_status.text = "Publicado! Novos jogos vao usar esse mapa."
+	else:
+		builder_status.text = "Falha ao publicar."
+
+
+func _publicar_arquivo(caminho: String) -> bool:
+	var arquivo: FileAccess = FileAccess.open(caminho, FileAccess.READ)
+	if arquivo == null:
+		return false
+	var texto: String = arquivo.get_as_text()
+	DirAccess.make_dir_recursive_absolute(OFFICIAL_MAP_PATH.get_base_dir())
+	var destino: FileAccess = FileAccess.open(OFFICIAL_MAP_PATH, FileAccess.WRITE)
+	if destino == null:
+		return false
+	destino.store_string(texto)
+	_mapa_oficial_lido = false  # invalida o cache
+	return true
+
+
+func _salvar_mundo_construtor() -> bool:
+	if not builder_mode or voxel_world == null:
+		return false
+	DirAccess.make_dir_recursive_absolute(BUILDER_DIR)
+	var dados: Dictionary = {
+		"format": "trumancraft_builder_world",
+		"version": 1,
+		"name": builder_world_name,
+		"world_type": world_type,
+		"flat_size": voxel_world.unlocked_size,
+		"flat_surface_y": flat_surface_y,
+		"changes": voxel_world.export_changes(),
+		"metadata": voxel_world.export_metadata(),
+	}
+	var caminho: String = BUILDER_DIR + builder_world_name.validate_filename() + ".json"
+	var arquivo: FileAccess = FileAccess.open(caminho, FileAccess.WRITE)
+	if arquivo == null:
+		return false
+	arquivo.store_string(JSON.stringify(dados))
+	return true
+
+
+func _carregar_mapa_oficial() -> Dictionary:
+	if _mapa_oficial_lido:
+		return _mapa_oficial_cache
+	_mapa_oficial_lido = true
+	_mapa_oficial_cache = {}
+	if not FileAccess.file_exists(OFFICIAL_MAP_PATH):
+		return _mapa_oficial_cache
+	var arquivo: FileAccess = FileAccess.open(OFFICIAL_MAP_PATH, FileAccess.READ)
+	if arquivo == null:
+		return _mapa_oficial_cache
+	var texto: String = arquivo.get_as_text()
+	var json: JSON = JSON.new()
+	if json.parse(texto) == OK and typeof(json.data) == TYPE_DICTIONARY:
+		_mapa_oficial_cache = json.data
+		_mapa_oficial_cache["_hash"] = texto.md5_text()
+	return _mapa_oficial_cache
+
+
+func _aplicar_mapa_oficial() -> void:
+	# o mapa construido pelo dev vira parte da BASE de todo jogo real
+	if builder_mode:
+		return  # o construtor edita a base crua
+	var dados: Dictionary = _carregar_mapa_oficial()
+	if dados.is_empty() or str(dados.get("world_type", "normal")) != world_type:
+		return
+	voxel_world.apply_changes_as_base(dados.get("changes", []))
+	voxel_world.import_metadata(dados.get("metadata", []))
+	# muda a base -> entra no hash de compatibilidade dos saves
+	active_terrain_hash += "|mapa:" + str(dados.get("_hash", ""))
 
 
 # ---------------- modo criativo ----------------
@@ -2135,18 +2409,68 @@ func _make_square_box(bg_color: Color, border_color: Color, border_width: int, c
 	return style
 
 func _apply_square_panel_style(panel: PanelContainer) -> void:
-	panel.add_theme_stylebox_override("panel", _make_square_box(Color(0.08, 0.09, 0.10, 0.97), Color(0.30, 0.42, 0.34, 1.0), 2, 16.0))
+	# painel estilo Minecraft: escuro translucido com contorno preto
+	panel.add_theme_stylebox_override("panel", _make_square_box(Color(0.05, 0.05, 0.06, 0.84), Color(0.0, 0.0, 0.0, 0.9), 2, 16.0))
+
+var _mc_style_cache: Dictionary = {}
+
+func _mc_button_style(estado: String) -> StyleBoxTexture:
+	# textura classica do botao do Minecraft: cinza pedra com bisel claro em cima,
+	# escuro embaixo, contorno preto; hover azulado
+	if _mc_style_cache.has(estado):
+		return _mc_style_cache[estado]
+	var w: int = 64
+	var h: int = 20
+	var base: Color
+	match estado:
+		"hover": base = Color(0.51, 0.55, 0.70)
+		"pressed": base = Color(0.42, 0.46, 0.60)
+		"disabled": base = Color(0.29, 0.29, 0.29)
+		_: base = Color(0.475, 0.475, 0.475)
+	var img: Image = Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in range(h):
+		for x in range(w):
+			var c: Color = base
+			var ruido: float = float((x * 7 + y * 13) % 5) / 5.0 * 0.06 - 0.03
+			c = Color(clampf(c.r + ruido, 0.0, 1.0), clampf(c.g + ruido, 0.0, 1.0), clampf(c.b + ruido, 0.0, 1.0))
+			if y <= 1:
+				c = c.lightened(0.35)
+			elif y >= h - 3:
+				c = c.darkened(0.30)
+			img.set_pixel(x, y, c)
+	for x in range(w):
+		img.set_pixel(x, 0, Color.BLACK)
+		img.set_pixel(x, h - 1, Color.BLACK)
+	for y in range(h):
+		img.set_pixel(0, y, Color.BLACK)
+		img.set_pixel(w - 1, y, Color.BLACK)
+	var sb: StyleBoxTexture = StyleBoxTexture.new()
+	sb.texture = ImageTexture.create_from_image(img)
+	sb.texture_margin_left = 3
+	sb.texture_margin_right = 3
+	sb.texture_margin_top = 3
+	sb.texture_margin_bottom = 3
+	sb.set_content_margin(SIDE_LEFT, 10.0)
+	sb.set_content_margin(SIDE_RIGHT, 10.0)
+	sb.set_content_margin(SIDE_TOP, 6.0)
+	sb.set_content_margin(SIDE_BOTTOM, 6.0)
+	_mc_style_cache[estado] = sb
+	return sb
 
 func _apply_square_button_style(button: Button) -> void:
-	button.add_theme_stylebox_override("normal", _make_square_box(Color(0.13, 0.16, 0.14, 1.0), Color(0.32, 0.44, 0.36, 1.0), 1, 9.0))
-	button.add_theme_stylebox_override("hover", _make_square_box(Color(0.19, 0.26, 0.21, 1.0), Color(0.46, 0.74, 0.52, 1.0), 1, 9.0))
-	button.add_theme_stylebox_override("pressed", _make_square_box(Color(0.09, 0.12, 0.10, 1.0), Color(0.55, 0.85, 0.60, 1.0), 1, 9.0))
+	button.add_theme_stylebox_override("normal", _mc_button_style("normal"))
+	button.add_theme_stylebox_override("hover", _mc_button_style("hover"))
+	button.add_theme_stylebox_override("pressed", _mc_button_style("pressed"))
+	button.add_theme_stylebox_override("disabled", _mc_button_style("disabled"))
 	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	button.add_theme_color_override("font_color", Color(0.94, 0.96, 0.94))
-	button.add_theme_color_override("font_hover_color", Color.WHITE)
-	button.add_theme_color_override("font_pressed_color", Color(0.75, 0.95, 0.80))
-	button.add_theme_font_size_override("font_size", 15)
-	button.custom_minimum_size = Vector2(0, 36)
+	button.add_theme_color_override("font_color", Color.WHITE)
+	button.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 0.63))   # amarelo MC
+	button.add_theme_color_override("font_pressed_color", Color(1.0, 1.0, 0.63))
+	button.add_theme_color_override("font_disabled_color", Color(0.63, 0.63, 0.63))
+	button.add_theme_color_override("font_outline_color", Color(0.12, 0.12, 0.14))
+	button.add_theme_constant_override("outline_size", 4)
+	button.add_theme_font_size_override("font_size", 16)
+	button.custom_minimum_size = Vector2(0, 40)
 
 func _make_menu_button(text: String, callback: Callable) -> Button:
 	var button: Button = Button.new()
@@ -2156,7 +2480,7 @@ func _make_menu_button(text: String, callback: Callable) -> Button:
 	return button
 
 func _create_menu_panels() -> void:
-	main_menu_panel = _make_center_menu_panel(Vector2(400, 480))
+	main_menu_panel = _make_center_menu_panel(Vector2(420, 580))
 	ui_layer.add_child(main_menu_panel)
 
 	var main_root: VBoxContainer = VBoxContainer.new()
@@ -2173,6 +2497,7 @@ func _create_menu_panels() -> void:
 	main_root.add_child(continue_button)
 	main_root.add_child(_make_menu_button("Novo Jogo", _start_new_game))
 	main_root.add_child(_make_menu_button("Novo Mundo Superplano (Criativo)", _start_new_flat_world))
+	main_root.add_child(_make_menu_button("Construtor de Mundo", _show_builder_menu))
 	main_root.add_child(_make_menu_button("Editor de Terreno", _open_terrain_editor))
 	main_root.add_child(_make_menu_button("Editor de Mapa (Cidade)", _open_map_editor))
 	main_root.add_child(_make_menu_button("Estudio de Estruturas", _open_structure_studio))
@@ -2184,7 +2509,7 @@ func _create_menu_panels() -> void:
 	menu_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	main_root.add_child(menu_status_label)
 
-	pause_menu_panel = _make_center_menu_panel(Vector2(380, 560))
+	pause_menu_panel = _make_center_menu_panel(Vector2(400, 640))
 	pause_menu_panel.visible = false
 	ui_layer.add_child(pause_menu_panel)
 
@@ -2199,6 +2524,8 @@ func _create_menu_panels() -> void:
 	pause_root.add_child(pause_title)
 	pause_root.add_child(_make_menu_button("Voltar ao jogo", _resume_game))
 	pause_root.add_child(_make_menu_button("Salvar", _save_from_pause_menu))
+	publicar_button = _make_menu_button("Publicar Mapa p/ Jogadores", _publicar_do_pause)
+	pause_root.add_child(publicar_button)
 	pause_root.add_child(_make_menu_button("Importar Schematic (Minecraft)", _abrir_dialogo_schematic))
 
 	flat_size_row = VBoxContainer.new()
@@ -2282,6 +2609,7 @@ func _create_menu_panels() -> void:
 
 	options_root.add_child(_make_menu_button("Voltar", _close_options_panel))
 	_create_skin_file_dialog()
+	_create_builder_panels()
 	_create_loading_panel()
 
 func _make_center_menu_panel(panel_size: Vector2) -> PanelContainer:
@@ -2297,6 +2625,8 @@ func _is_menu_open() -> bool:
 		(main_menu_panel != null and main_menu_panel.visible)
 		or (pause_menu_panel != null and pause_menu_panel.visible)
 		or (options_panel != null and options_panel.visible)
+		or (builder_panel != null and builder_panel.visible)
+		or (builder_create_panel != null and builder_create_panel.visible)
 	)
 
 func _show_main_menu() -> void:
@@ -2312,6 +2642,10 @@ func _show_main_menu() -> void:
 		pause_menu_panel.visible = false
 	if options_panel != null:
 		options_panel.visible = false
+	if builder_panel != null:
+		builder_panel.visible = false
+	if builder_create_panel != null:
+		builder_create_panel.visible = false
 	if main_menu_panel != null:
 		main_menu_panel.visible = true
 	if continue_button != null:
@@ -2327,6 +2661,7 @@ func _show_main_menu() -> void:
 func _start_new_game() -> void:
 	world_type = "normal"
 	creative_mode = false
+	builder_mode = false
 	flat_size = 100
 	_start_world_loading(false)
 
@@ -2334,6 +2669,7 @@ func _start_new_game() -> void:
 func _start_new_flat_world() -> void:
 	world_type = "superflat"
 	creative_mode = true
+	builder_mode = false
 	flat_size = 100
 	_start_world_loading(false)
 
@@ -2357,10 +2693,12 @@ func _continue_game() -> void:
 		if menu_status_label != null:
 			menu_status_label.text = "Nenhum save encontrado."
 		return
+	builder_mode = false
 	_start_world_loading(true)
 
 func _start_world_loading(is_continue: bool) -> void:
 	continue_on_load_finish = is_continue
+	game_started = false  # durante o load nao ha gameplay (evita input no mundo antigo)
 	if is_continue:
 		_peek_save_meta()  # tipo de mundo/tamanho precisam existir ANTES de gerar a base
 
@@ -2442,7 +2780,14 @@ func _start_world_loading(is_continue: bool) -> void:
 		player.queue_free()
 		
 	_create_world()
-		
+
+	# mundo do construtor: aplica as edicoes salvas COMO mudancas rastreadas
+	# (continuam acumulando ao editar e salvar de novo)
+	if builder_mode and not builder_pending.is_empty():
+		voxel_world.import_changes(builder_pending.get("changes", []))
+		voxel_world.import_metadata(builder_pending.get("metadata", []))
+		builder_pending = {}
+
 	if is_continue:
 		if not _load_game_state():
 			if menu_status_label != null:
@@ -2452,7 +2797,7 @@ func _start_world_loading(is_continue: bool) -> void:
 				loading_panel.visible = false
 			return
 			
-	if not is_continue and world_type == "normal":
+	if not is_continue and world_type == "normal" and not builder_mode:
 		# bau inicial dentro da casa do jogador na cidade
 		var spawn_surface_y: int = _surface_y_at(46, 45)
 		var spawn_chest_pos: Vector3i = Vector3i(46, spawn_surface_y + 1, 45)
@@ -2529,6 +2874,8 @@ func _show_pause_menu() -> void:
 		pause_status_label.text = ""
 	if creative_panel != null:
 		creative_panel.visible = false
+	if publicar_button != null:
+		publicar_button.visible = builder_mode
 	if flat_size_row != null:
 		flat_size_row.visible = world_type == "superflat"
 		if world_type == "superflat" and voxel_world != null:
@@ -2595,6 +2942,13 @@ func _close_options_panel() -> void:
 	_update_player_visual_visibility()
 
 func _save_from_pause_menu() -> void:
+	if builder_mode:
+		# no construtor, salvar grava o MUNDO (que pode virar o mapa dos jogadores)
+		if _salvar_mundo_construtor():
+			pause_status_label.text = "Mundo \"%s\" salvo no Construtor." % builder_world_name
+		else:
+			pause_status_label.text = "Nao foi possivel salvar o mundo."
+		return
 	if _save_game_state():
 		if pause_status_label != null:
 			pause_status_label.text = "Jogo salvo."
@@ -2603,6 +2957,19 @@ func _save_from_pause_menu() -> void:
 	else:
 		if pause_status_label != null:
 			pause_status_label.text = "Nao foi possivel salvar."
+
+
+func _publicar_do_pause() -> void:
+	if not builder_mode:
+		pause_status_label.text = "So da pra publicar dentro do Construtor de Mundo."
+		return
+	if not _salvar_mundo_construtor():
+		pause_status_label.text = "Falha ao salvar antes de publicar."
+		return
+	if _publicar_arquivo(BUILDER_DIR + builder_world_name.validate_filename() + ".json"):
+		pause_status_label.text = "Publicado! Todo jogo novo dos jogadores usa este mapa."
+	else:
+		pause_status_label.text = "Falha ao publicar."
 
 func _quit_game() -> void:
 	get_tree().quit()

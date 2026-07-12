@@ -344,6 +344,28 @@ func import_changes(raw_changes: Variant) -> bool:
 	return true
 
 
+## Aplica mudancas como parte da BASE do mundo (mapa oficial construido pelo dev):
+## NAO entra em _changed_voxels, entao o save do jogador guarda so os deltas dele.
+func apply_changes_as_base(raw_changes: Variant) -> bool:
+	if typeof(raw_changes) != TYPE_ARRAY:
+		return false
+	for raw_entry in raw_changes:
+		if typeof(raw_entry) != TYPE_ARRAY:
+			continue
+		var entry: Array = raw_entry as Array
+		if entry.size() != 2:
+			continue
+		var index: int = int(entry[0])
+		var palette_id: int = int(entry[1])
+		if index < 0 or index >= WORLD_VOLUME or palette_id < 0 or palette_id >= _id_to_name.size():
+			continue
+		var pos: Vector3i = get_position_from_index(index)
+		if not is_buildable(pos):
+			continue
+		_set_palette_id(pos, palette_id, false)
+	return true
+
+
 func export_metadata() -> Array:
 	var result: Array = []
 	var indices: Array = _metadata.keys()
