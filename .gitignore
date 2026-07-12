@@ -5,3 +5,6 @@ export_presets.cfg
 *.tmp
 *.translation
 
+# guia interno do projeto (nao vai pro GitHub)
+CLAUDE.md
+
