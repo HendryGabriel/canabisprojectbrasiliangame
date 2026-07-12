@@ -1,25 +1,30 @@
 # Weed Factory — Game Design Document (GDD)
 
-> Factory builder (estilo Factorio) temático de cultivo e processamento de cannabis.
-> Engine: **Godot 4.6**. Plataforma alvo inicial: Desktop.
+> Factory builder 3D voxel temático de cultivo e processamento de cannabis.
+> Engine: **Godot 4.7**. Plataforma alvo inicial: Desktop.
 
 ---
 
 ## 1. Visão geral
 
 Você chega de mudança numa casa com quintal e, partindo de um cultivo manual
-caseiro, expande o terreno e automatiza tudo até virar uma **fábrica 100%
-automática** que imprime dinheiro. Arco de progressão: **residencial → industrial**.
+caseiro, transforma o quintal em uma fábrica automatizada. A produção acontece
+em máquinas físicas, conectadas por tubos transparentes que deixam os itens
+visíveis durante o transporte. O arco de progressão é **residencial → industrial**.
 
-- **Gênero:** factory builder / automação (Factorio raiz) + cultivo (Stardew Valley).
-- **Modo:** **single-player e coop** (o mesmo jogo suporta jogar sozinho ou em cooperação).
-- **Câmera e gráficos:** top-down 2D, visual e câmera **bem parecidos com Stardew Valley
-  e Factorio** (perspectiva de cima, mundo em tiles, máquinas/esteiras alinhadas ao grid).
-  **Não é pixelart** — arte com traço/ilustração mais limpo, não em pixels.
-- **Avatar:** sim — personagem controlável (Factorio clássico), movimento **livre em 8 direções**.
+- **Gênero:** factory builder / automação em mundo 3D voxel + cultivo.
+- **Modo:** single-player e cooperação; jogar sozinho é a mesma simulação com um jogador.
+- **Câmera:** primeira pessoa, aproveitando o protótipo 3D voxel atual.
+- **Mundo:** um mapa fixo, autoral e finito, dividido entre o quintal e uma cidade pequena.
+- **Avatar:** personagem controlável com movimento livre em 3D, colisão e pulo.
+- **Construção:** máquinas, plantações e tubos ocupam células e volumes reais da grade voxel.
 - **Moeda central:** dinheiro. Camadas secundárias: metas de produção e pesquisa.
-- **Clímax:** marco de vitória (virar o maior produtor / se aposentar milionário) que
-  **não tranca** — dispara tela de vitória e libera sandbox infinito.
+- **Clímax:** atingir o marco de maior produtor / aposentadoria milionária. A vitória
+  exibe uma tela, mas mantém o sandbox do quintal disponível no mesmo mapa.
+
+O mapa não cresce durante a partida. O jogador progride melhorando a fábrica,
+desbloqueando produtos e aumentando a eficiência da logística, não comprando novos
+terrenos.
 
 ---
 
@@ -27,49 +32,52 @@ automática** que imprime dinheiro. Arco de progressão: **residencial → indus
 
 | # | Decisão | Escolha |
 |---|---------|---------|
-| 1 | Tipo de jogo | **Factorio raiz** — esteiras físicas, itens viajam no grid |
-| 2 | Engine | **Godot 4.6** (apenas renderizador — ver §9) |
-| 3 | Avatar | **Sim**, movimento livre em 8 direções |
-| 4 | Simulação de esteira | **Por células (discreto)** com interpolação visual |
-| 5 | Economia | **Dinheiro central** + metas de produção (estilo Space Elevator) + pesquisa |
-| 6 | Modelo de item | `{produto, cepa}` como **tags enum** (sem qualidade float). Empilha por par |
-| 7 | Cepas | **Distintas até o fim** (flor crua e produtos por cepa) |
-| 8 | Mistura | **Blend por categoria** — Sativa/Indica/Híbrida (3 produtos genéricos) |
-| 9 | Cultivo | `semente + água + tempo → buds`. Manual (Stardew) → estufas automáticas |
-| 10 | Água | **Fluido real** com canos |
-| 11 | Simulação de fluido | **Volume compartilhado por rede** (sem pressão por segmento) |
-| 12 | Mapa | **Terreno finito expansível** comprando lotes |
-| 13 | Energia | **Global + conta de luz** (brownout se faltar; gerar própria depois) |
-| 14 | Ameaça | **Suspeita/calor** (gestão de risco, sem combate) |
-| 15 | Venda | **Doca física** (traficante no beco) alimentada por esteira |
-| 16 | Final | **Marco de vitória que não tranca** |
-| 17 | Processamento manual | **Tudo é bancada/máquina física no grid** (sem craft-na-mão abstrato) |
-| 18 | Arte | Sprites **fornecidos pelo desenvolvedor**; **não é pixelart**; estilo Stardew/Factorio; lógica separada do visual |
-| 19 | Modo | **Single-player e coop** |
-| 20 | Rede | **Lockstep determinístico** (input-only) |
+| 1 | Tipo de jogo | **Factory builder 3D voxel** com máquinas físicas |
+| 2 | Engine | **Godot 4.7** |
+| 3 | Câmera | **Primeira pessoa**; movimento livre, colisão e pulo |
+| 4 | Transporte | **Tubos transparentes** para itens e produtos |
+| 5 | Simulação de tubos | **Por células discretas**, com interpolação apenas visual |
+| 6 | Economia | Dinheiro central + metas de produção + pesquisa |
+| 7 | Modelo de item | `{produto, cepa}` como tags enum; sem qualidade float |
+| 8 | Cepas | Distintas até o fim para flor e produtos derivados |
+| 9 | Mistura | Blend por categoria: Sativa, Indica e Híbrida |
+| 10 | Cultivo | `semente + água + tempo → buds`; manual → estufas automáticas |
+| 11 | Água | Fluido por rede de tubos, com volume compartilhado |
+| 12 | Mapa | **Fixo**, com quintal sandbox e cidade não sandbox |
+| 13 | Construção | Permitida apenas no quintal e em células autorizadas |
+| 14 | Energia | Global + conta de luz; brownout se faltar energia |
+| 15 | Ameaça | Suspeita/calor; gestão de risco, sem combate |
+| 16 | Venda | NPC comprador em cidade pequena; venda manual ou por terminal automático |
+| 17 | Rota de venda | Rota fixa e protegida entre o terminal do quintal e o NPC |
+| 18 | Processamento manual | Bancada/máquina física no voxel; sem craft abstrato |
+| 19 | Arte | Arte 3D voxel substituível, separada da simulação |
+| 20 | Rede | Lockstep determinístico, transmitindo apenas inputs |
+| 21 | Autoria de máquinas | Oficina criativa com voxels de 1×, 1/2× e 1/4×; exportação para schematic |
+| 22 | Coop da fábrica | Pesquisa, esquemáticos, compras e obras compartilhados por comandos ordenados |
 
 ---
 
 ## 3. Modelo de item
 
-- Cada item é um par de enums: `{produto, cepa}` — ex. `{Haxixe, OG_Kush}`.
-- **Sem qualidade carregada** (sem THC float por unidade). O THC é só a justificativa
-  narrativa do preço de cada cepa, não um stat que viaja com o item.
-- Itens com o mesmo par **empilham** normalmente (essencial pra compressão de esteira).
-- Receitas são **parametrizadas e preservam a cepa**: existe **uma** receita de Haxixe
-  ("bud da cepa X → haxixe da cepa X"), não 9 receitas escritas à mão.
-- **Exceção — Blend:** misturar 2 cepas da mesma categoria dissolve a identidade de
-  cepa em **categoria** (ver §5).
+- Cada item é um par de enums: `{produto, cepa}` — exemplo: `{Haxixe, OG_Kush}`.
+- **Sem qualidade carregada:** não existe THC float por unidade. O THC justifica
+  narrativamente o preço da cepa, mas não viaja como estado do item.
+- Itens com o mesmo par empilham normalmente, reduzindo o custo da simulação.
+- Receitas são parametrizadas e preservam a cepa: uma receita de Haxixe serve para
+  qualquer cepa compatível, sem duplicação manual.
+- **Exceção — Blend:** misturar duas cepas da mesma categoria dissolve a identidade
+  de cepa em uma categoria de Blend.
 
 ---
 
 ## 4. Cepas (strains)
 
-THC define a ordem de preço (baixo → alto) e a progressão de desbloqueio.
+THC define a ordem de preço e a progressão de desbloqueio. O valor é uma propriedade
+da tabela de dados da cepa, não um número carregado individualmente pelo item.
 
 | Categoria | Cepas | Papel |
-|-----------|-------|-------|
-| **Ruderalis** | Cannabis Ruderalis | Inicial, THC baixo. Starter. Não entra em blend (categoria solo) |
+|-----------|---------|---------|
+| **Ruderalis** | Cannabis Ruderalis | Inicial, THC baixo, não entra em blend |
 | **Sativas** | Jack Herer, Sour Diesel, Durban Poison | Tier intermediário |
 | **Indicas** | Northern Lights, Granddaddy Purple, Purple Kush | Tier intermediário |
 | **Híbridas** | Blue Dream, Girl Scout Cookies (GSC), OG Kush | Tier alto |
@@ -78,145 +86,306 @@ THC define a ordem de preço (baixo → alto) e a progressão de desbloqueio.
 
 ## 5. Cadeia de produção
 
-### Cultivo (fonte de buds)
+### Cultivo
+
 Ciclo: `semente + água + tempo → N buds da cepa`.
 
 | Método | Como funciona | Tier |
 |--------|---------------|------|
-| **Manual** | Estilo Stardew: avatar **planta → molha → colhe** à mão. Ciclos **curtos** (sentir progressão). Grátis, lento, exige presença | 0 |
-| **Mini estufa** | Automática, I/O por esteira (entra semente+água, sai bud), replanta sozinha | 1 |
-| **Grande estufa** | Upgrade da mini: mesmo comportamento, **footprint maior, mais output** | 2 |
+| **Manual** | O avatar planta, molha e colhe usando interação física | 0 |
+| **Mini estufa** | Recebe semente e água por tubos, produz buds e replanta sozinha | 1 |
+| **Grande estufa** | Upgrade com footprint maior e maior produção | 2 |
 
-- **Sementes:** compradas no **PC** no início; depois desbloqueia subprocesso que
-  **auto-produz semente** a partir da própria cepa (bootstrap → infinito).
+- Sementes são compradas no PC do quintal no início.
+- Depois, um subprocesso desbloqueado produz sementes automaticamente por cepa.
+- Todas as transformações continuam sendo entidades físicas no quintal.
 
 ### Processamento
-Cada máquina ocupa footprint real no grid com pontos de I/O posicionados.
+
+Cada máquina ocupa um footprint real na grade voxel e possui portas de entrada e
+saída alinhadas às faces das células. As portas são conectadas por tubos.
 
 | Produto | Máquina | Inputs | Tamanho |
 |---------|---------|--------|---------|
-| **Prensado** | Bancada manual (cozinha) — avatar opera | Buds | manual |
-| **Maconha Pura** | Máquina 1 input | Buds | 1×1 |
-| **Maconha Misturada → Blend** | Máquina 2 inputs | 2 cepas da **mesma categoria** → Blend Sativa/Indica/Híbrida | 2×2 |
-| **Haxixe** | Máquina múltiplos inputs | Buds (múltiplos) | — |
-| **Ice** | Máquina **lenta** | Maconha + Água/Gelo | 2×2 |
-| **Canabidiol (CBD)** | Máquina | Vidro + Maconha + Água | 3×3 |
-| **Baseado** | Máquina | Maconha + Seda | 2×2 |
+| **Prensado** | Bancada manual da cozinha; avatar opera | Buds | físico/manual |
+| **Maconha Pura** | Máquina de um input | Buds | 1×1×1 |
+| **Maconha Misturada / Blend** | Máquina de dois inputs | Duas cepas da mesma categoria | 2×2×2 |
+| **Haxixe** | Máquina de múltiplos inputs | Buds | definido por blueprint |
+| **Ice** | Máquina lenta | Maconha + água/gelo | 2×2×2 |
+| **Canabidiol (CBD)** | Máquina | Vidro + maconha + água | 3×3×3 |
+| **Baseado** | Máquina | Maconha + seda | 2×2×2 |
 
-### Subprocessos (cadeias de apoio)
-- **Extrator de madeira** → madeira (de árvores no terreno).
-- **Craft automático da seda** → seda (input do Baseado).
-- **Fazedor de gelos** → gelo (de água; input do Ice).
-- **Fornalha de vidro** → vidro (de areia/sílica; input do CBD).
+### Subprocessos
+
+- **Extrator de madeira** → madeira de árvores do quintal.
+- **Craft automático da seda** → seda para o Baseado.
+- **Fazedor de gelo** → gelo a partir de água para o Ice.
+- **Fornalha de vidro** → vidro a partir de areia/sílica para o CBD.
+
+### Tubos transparentes
+
+- O jogador coloca tubos apenas nas células autorizadas do quintal.
+- Cada segmento é voxel-aligned e pode começar com trecho reto, curva e subida.
+- Ramificações, junções e filtros entram depois do primeiro vertical slice.
+- Os tubos são transparentes na apresentação; os itens aparecem como pequenas
+  representações 3D movimentando-se no interior.
+- A simulação usa slots discretos por célula. A posição suave do item dentro do
+  tubo é interpolação visual e nunca altera o resultado do gameplay.
+- Junções usam uma regra determinística de roteamento. Nenhuma ordem de Dictionary,
+  física ou tempo de frame pode decidir qual item passa primeiro.
+- Tubo cheio bloqueia a entrada da máquina; tubo bloqueado não destrói itens e deve
+  expor visualmente o estado para o jogador.
+- O tubo de venda automático termina em um **Terminal de Entrega** no limite do
+  quintal. A continuação até o NPC é uma rota fixa do mapa da cidade.
+
+### Oficina de criação de máquinas e schematics
+
+A criação de máquinas é uma ferramenta de autoria separada do modo normal de jogo.
+Ela serve para o desenvolvedor criar máquinas voxel novas e exportá-las para o
+catálogo de conteúdo do jogo.
+
+- A oficina abre um mundo criativo/superplano isolado, sem dinheiro, heat ou progressão.
+- O autor constrói com voxels de tamanho normal, metade ou um quarto do voxel de gameplay.
+- Internamente, a oficina usa uma unidade fixa de **1/4 de voxel**. Um voxel normal ocupa
+  4×4×4 microvoxels; um voxel de metade ocupa 2×2×2 e um de quarto ocupa 1×1×1.
+- Esses microvoxels formam **blocos-módulo grandes**. O jogador não compra nem instala
+  microvoxels individualmente durante a partida normal.
+- Cada bloco-módulo é uma unidade do catálogo de blocos voxel do runtime, equivalente
+  aos blocos grandes já existentes no projeto Godot. A diferença é que sua aparência
+  pode ser composta internamente por microvoxels da oficina.
+- O autor define a aparência e a estrutura, mas também informa footprint, pivot, colisão,
+  portas de tubo, entradas, saídas, consumo de energia, rede de água e comportamento.
+- A exportação gera uma `SchematicData` versionada com:
+  - ID e versão da máquina;
+  - hash canônico do conteúdo;
+  - lista de cada bloco-módulo/peça macro e sua coordenada local na grade da máquina;
+  - referência ao conjunto de microvoxels que forma cada bloco-módulo;
+  - rotação, espelhamento permitido e pivot;
+  - footprint e envelope de construção;
+  - portas de tubo/fluido/energia;
+  - ID da receita ou comportamento simulado;
+  - lista de peças vendáveis e requisitos de pesquisa.
+- A exportação rejeita voxels desconhecidos, peças fora do envelope, portas inválidas,
+  IDs duplicados ou dados que não possam ser serializados de forma determinística.
+
+### Como o jogador adquire e constrói uma schematic
+
+1. O desenvolvedor exporta a máquina no modo de criação e adiciona a schematic ao catálogo.
+2. Na partida, o jogador encontra a schematic na **Mesa de Pesquisas**.
+3. O jogador inicia e conclui a pesquisa; o conhecimento é desbloqueado para a fábrica.
+4. Com a schematic aprendida, o jogador seleciona o ghost e posiciona a máquina em
+   qualquer lugar válido do quintal, antes de comprar os materiais.
+5. O ghost mostra footprint, pivot, portas, altura, colisões e cada posição que será
+   preenchida. A simulação valida a área, mas ainda não consome peças.
+6. Ao confirmar, nasce um canteiro de construção com um manifesto exato de peças:
+   cada entrada aponta para `voxel_id`, coordenada local e rotação da peça.
+7. O NPC comerciante da cidade passa a vender cada bloco-módulo grande da schematic
+   aprendida. Cada bloco vendido já contém os microvoxels construídos na autoria.
+8. O jogador compra os blocos-módulo, leva-os ao quintal e os instala no canteiro
+   seguindo o manifesto. A obra só ativa o comportamento quando todas as peças obrigatórias,
+   portas e conexões estiverem completas.
+
+No jogo normal, o jogador não constrói microvoxels livremente fora de uma schematic.
+Ele posiciona o projeto inteiro e monta as peças autorizadas pelo manifesto. O sistema
+de tubos pode receber materiais para a obra em uma etapa futura; o primeiro fluxo usa
+inventário e colocação manual para manter o escopo controlado.
 
 ---
 
 ## 6. Economia e venda
 
-- **Comprar (entrada):** menu do **PC** — sementes, máquinas, lotes de terra, upgrades.
-  Instantâneo, gasta dinheiro.
-- **Vender (saída):** **doca física** = **traficante no beco escuro ao lado da casa**.
-  A esteira despeja o produto acabado nele → dinheiro pinga ao longo do tempo.
-  Cru no manual (avatar leva na mão) → automático no fim (esteira alimenta sozinha).
-- **Flor crua** vende com preço **por cepa** (OG Kush > Ruderalis). Produtos processados
-  valem mais.
-- **Conta de luz:** dreno constante de dinheiro que escala com o consumo das máquinas.
-- **Metas de produção:** entregas-marco (estilo Space Elevator) destravam tiers/tecnologia.
-- **Pesquisa:** camada secundária de desbloqueio/refino.
+### Compras
+
+- O PC fica no quintal e vende sementes, materiais iniciais, tubos e upgrades.
+- Compras são instantâneas, consomem dinheiro e respeitam os desbloqueios.
+- Não existe compra de lote, expansão de terreno ou compra de novas áreas.
+
+### Comerciante e peças de máquina
+
+- O mesmo NPC da cidade compra os produtos ilegais e vende as peças das máquinas
+  aprendidas na Mesa de Pesquisas. Não é necessário criar um segundo NPC para a loja.
+- Antes da pesquisa, o catálogo da schematic fica bloqueado e as peças não são vendidas.
+- Depois da pesquisa, cada bloco-módulo aparece com `machine_block_id`, preço, quantidade
+  e referência à schematic que o utiliza.
+- O `machine_block_id` é o item comprado, empilhado, transportado e instalado; não há
+  preço ou estoque separado para os microvoxels internos.
+- Comprar um bloco-módulo não o coloca automaticamente na máquina. Ele entra no
+  inventário ou no armazenamento disponível e precisa ser instalado no canteiro correto.
+- O dinheiro da operação, o conhecimento pesquisado, o catálogo do comerciante e os
+  canteiros são estado compartilhado da fábrica no coop.
+
+### Venda manual
+
+- O avatar coleta o produto e carrega uma quantidade limitada até o NPC da cidade.
+- A interação com o NPC confirma a venda e transforma o estoque em dinheiro.
+- A cidade é pequena e tem apenas o comprador, sua área de interação e a rota de
+  entrega fixa.
+
+### Venda automática
+
+- O jogador conecta a saída da fábrica a um Terminal de Entrega no limite do quintal.
+- O terminal aceita somente produtos vendáveis e envia lotes pela rota protegida da
+  cidade até o NPC.
+- O NPC paga conforme os lotes chegam, permitindo uma fábrica realmente automática.
+- O jogador não constrói, remove ou modifica tubos na cidade.
+
+### Valor e custos
+
+- Flor crua tem preço por cepa; produtos processados valem mais.
+- A conta de luz drena dinheiro continuamente e escala com o consumo.
+- Metas de produção destravam tiers e tecnologia.
+- Pesquisa oferece melhorias de eficiência, capacidade, controle de risco e schematics.
 
 ---
 
 ## 7. Energia
 
-- Modelo **global**: geração total vs consumo total. **Sem postes / sem área de cobertura**.
-- Início: plugado na **rede da casa**, paga **conta de luz**.
-- Se consumo > geração → **brownout** (tudo desacelera).
-- Progressão: construir **geração própria** (solar, biomassa de resto de cannabis/madeira)
-  pra cortar a conta.
+- Modelo global: geração total contra consumo total, sem postes ou área de cobertura.
+- No início, a casa fornece energia e cobra conta de luz.
+- Se consumo > geração, ocorre **brownout** e as máquinas/tubos trabalham mais devagar.
+- Mais tarde, o jogador constrói geração própria: solar e biomassa de restos de
+  cannabis ou madeira, reduzindo a conta.
 
 ---
 
-## 8. Suspeita / Calor (a "ameaça")
+## 8. Suspeita / Calor
 
-- Produzir/vender levanta **suspeita** (cheiro, movimento, visibilidade no bairro).
-- Gerenciar com: **dinheiro** (suborno/advogado), prédios de **discrição** (filtro de
-  carvão pro cheiro, muros/cerca, fachada legal), e **timing**.
-- Suspeita estoura → **batida policial**: multa / confisco de estoque (perda de
-  dinheiro/itens). **Não é combate/shooter.**
-- Vender muito no beco aumenta calor → tensão entre **produzir muito × ficar discreto**.
+- Produzir e vender aumenta suspeita por cheiro, movimento e visibilidade.
+- O jogador gerencia risco com dinheiro, filtro de carvão, muros, cercas e fachada legal.
+- Ao estourar, ocorre batida policial com multa e confisco de dinheiro ou estoque.
+- Não existe combate ou shooter.
+- A venda automática aumenta eficiência, mas também pode aumentar o calor por volume.
 
 ---
 
-## 9. Arquitetura técnica (crítico — coop)
+## 9. Arquitetura técnica
 
-> O jogo é **single-player e coop**. A escolha de suportar **coop com lockstep
-> determinístico** define a fundação — e não é retrofitável, por isso é construída
-> desde o início mesmo pro single-player (single-player = lockstep com 1 jogador).
+### Simulação
 
-**Estilo visual:** câmera e gráficos **bem parecidos com Stardew Valley e Factorio**
-(top-down, mundo em tiles, esteiras/máquinas no grid), mas **não em pixelart** — arte
-ilustrada/limpa. Como a lógica é separada do visual, o estilo é definido pelos sprites
-fornecidos, sem afetar a simulação.
+- A simulação é própria, em passo fixo, usando inteiros ou ponto fixo.
+- Estado autoritativo não lê relógio, delta de frame, transform, física do Godot,
+  RNG global ou ordem não determinística de coleções.
+- A grade voxel, as máquinas, os tubos, os itens, a energia, o dinheiro e o calor
+  pertencem ao estado da simulação.
+- Cada entidade possui ID estável. Iterações são ordenadas explicitamente por ID ou
+  por coordenada determinística.
+- O hash do estado é calculado a cada tick para validar o lockstep.
 
+### Renderização
 
-- **Simulação determinística própria**, em **passo fixo (fixed tick)**, usando
-  **inteiros / ponto-fixo** — **nunca** a física/float do Godot (float diverge entre
-  máquinas e quebra o lockstep).
-- **Godot 4.6 = apenas renderizador:** desenha o estado da simulação por cima,
-  **interpolando** entre ticks pra ficar fluido.
-- **Rede = lockstep determinístico (input-only):** todos os clientes rodam a mesma
-  simulação idêntica; só os **inputs** trafegam ("jogador X colocou esteira em (a,b)").
-  É o único modelo que escala com milhares de itens em coop.
-- Invariante inegociável: **mesmos inputs → mesmo estado** (mesmo hash de estado) em
-  toda máquina, todo tick. Toda iteração de coleção na sim deve ter **ordem determinística**.
-- **Lógica separada do visual:** sprites (fornecidos depois) ficam em `assets/` e são
-  plugados sem tocar na simulação.
-- Esteiras **por células** e fluidos **por volume-de-rede** — ambos modelos discretos,
-  amigáveis ao determinismo.
+- Godot 4.7 apresenta o estado da simulação em 3D voxel.
+- O renderizador interpola avatar, itens e efeitos entre ticks.
+- Tubos transparentes e itens dentro deles são visuais; o conteúdo autoritativo
+  continua sendo o slot discreto do tubo.
+- Sprites, meshes, materiais e efeitos ficam separados da lógica de produção.
+
+### Autoria, microvoxels e schematics
+
+- A oficina de criação usa coordenadas inteiras em quartos de voxel; não usa float para
+  definir a posição de um microvoxel ou de um bloco-módulo.
+- `SchematicData` tem serialização canônica, versão e hash. O mesmo arquivo precisa gerar
+  o mesmo hash em todas as máquinas e todos os peers.
+- O catálogo de runtime vende e empilha `machine_block_id` como uma unidade. Cada
+  bloco-módulo referencia o conjunto de microvoxels usado para desenhá-lo.
+- O renderizador pode mostrar o ghost com transparência e os microvoxels com suavização,
+  mas o footprint, o manifesto, as portas e as regras de montagem são autoritativos na sim.
+- A schematic não executa código arbitrário. Seu comportamento aponta para um ID de
+  máquina/receita já registrado e validado no catálogo.
+
+### Cooperação
+
+- Single-player e coop rodam a mesma simulação.
+- A rede transmite comandos ordenados, como construir tubo em uma célula, operar a
+  bancada, pesquisar uma schematic, comprar um bloco-módulo ou instalar uma peça no canteiro.
+- O hash da schematic, a pesquisa concluída e o manifesto do canteiro precisam existir
+  de forma idêntica em todos os peers antes da obra começar.
+- Pesquisas, catálogo do comerciante e canteiros pertencem à fábrica. Jogadores podem
+  operar a mesma obra, mas a ordem dos comandos resolve compras e colocações conflitantes.
+- Os clientes não transmitem posição de item nem estado final; cada peer recalcula.
+- Invariante: mesmos inputs ordenados → mesmo estado e mesmo hash em todo tick.
 
 ---
 
 ## 10. Avatar
 
-- Movimento **livre em 8 direções** (top-down). Só as construções respeitam o grid;
-  o avatar anda solto.
-- **Sem craft-na-mão abstrato:** toda transformação é uma entidade física no terreno.
-  O Prensado manual é uma **bancada da cozinha** que o avatar opera (chega perto,
-  segura → barra de progresso).
-- Inventário pequeno; carrega item na mão até as esteiras assumirem.
+- Movimento livre em primeira pessoa, com gravidade, colisão e pulo.
+- O avatar anda pelo quintal e pela cidade, mas apenas o quintal aceita construção.
+- O inventário é pequeno e permite carregar itens até as máquinas ou até o NPC.
+- Não existe craft abstrato no inventário: processos são feitos em bancadas e
+  máquinas físicas.
+- O modo de colocação de schematic cria um ghost orientado por grid e mostra o manifesto
+  de peças antes de qualquer compra.
+- A interação manual tem alcance, tempo e feedback visual definidos pela simulação.
 
 ---
 
-## 11. Mundo / Progressão espacial
+## 11. Mundo e mapa fixo
 
-- **Terreno procedural estilo Minecraft**: o mundo é uma função pura de `(x, y, seed)`
-  — chunks de 16×16 gerados/pintados conforme o player anda (pré-definido antes de
-  entrar; qualquer máquina gera idêntico → compatível com lockstep).
-- **Topo fixo**: a casa e o traficante do beco ficam na zona feita à mão; acima do
-  limite do mapa (y<0) fica a **cidade** (intransponível).
-- **Recursos garantidos perto da casa** (≤200m): lago, bosque e areial fixos na zona
-  inicial; o resto do mundo gera lagos (com borda de areia) e florestas por noise.
-- ~~Compra de lotes~~ — removida; o mundo é aberto, a progressão espacial é andar e
-  ocupar.
+O jogo usa um único mapa voxel autoral, preparado antes da partida e carregado com
+uma seed fixa. O mapa pode ter detalhes procedurais dentro dos limites definidos,
+mas seus limites e suas regiões não mudam durante a partida.
+
+### Região A — Quintal da casa
+
+- Área sandbox principal.
+- Permite construção e remoção de máquinas, tubos e estruturas autorizadas.
+- Contém a casa, PC, bancada, áreas de cultivo e recursos iniciais.
+- Contém água, árvores e areia suficientes para o início da progressão.
+- O jogador organiza toda a fábrica nessa região.
+
+### Região B — Cidade pequena
+
+- Área fixa, pequena e não sandbox.
+- Não permite colocar ou remover blocos, máquinas, plantações ou tubos.
+- Contém apenas o caminho de acesso, o NPC comprador e a rota fixa de entrega.
+- Funciona como destino de venda, não como segundo espaço de construção.
+- A rota fixa termina no mesmo NPC usado pela venda manual.
+
+### Fronteira entre regiões
+
+- A fronteira é uma regra de gameplay, não apenas uma parede visual.
+- O Terminal de Entrega fica no lado do quintal.
+- A rota protegida começa depois do terminal e pertence ao mapa da cidade.
+- Tentativas de construção na cidade são rejeitadas pela simulação e pelo modo de
+  colocação visual.
 
 ---
 
-## 12. Escopo deixado pra depois (não-objetivos do v1)
+## 12. Escopo deixado para depois (não objetivos do v1)
 
-- Esteira pixel-a-pixel (contínua) — fica no modelo por células.
-- Pressão de fluido por segmento — fica no volume-por-rede.
-- Mapa procedural infinito — fica no terreno expansível por compra.
-- Postes/fios de energia com cobertura — fica na energia global.
-- Combate físico com a polícia — fica na gestão de suspeita.
-- Qualidade/THC float por item — fica nas tags enum.
-- Luz/nutriente no cultivo — upgrade futuro.
+- Transporte pixel-a-pixel contínuo: o transporte usa tubos por células.
+- Pressão de fluido por segmento: o fluido usa volume compartilhado por rede.
+- Compra de lotes e expansão do terreno: o mapa é fixo.
+- Mapa procedural infinito ou novos biomas carregados durante a partida.
+- Construção livre na cidade ou múltiplos distritos comerciais.
+- Veículos autônomos de entrega: a primeira automação usa terminal e rota fixa.
+- Construção microvoxel livre no mapa normal: microvoxels só existem na autoria e na
+  montagem das peças de uma schematic.
+- Schematics com comportamento arbitrário ou scripts exportados pelo usuário: o catálogo
+  aceita apenas comportamentos registrados e determinísticos.
+- Postes e fios com área de cobertura: a energia é global.
+- Combate físico com a polícia.
+- Qualidade/THC float por unidade.
+- Luz e nutrientes detalhados no cultivo; entram apenas como upgrades futuros.
 
 ---
 
 ## 13. Próximos passos
 
-1. Esqueleto do projeto Godot 4.6 (estrutura de pastas: `sim/`, `render/`, `net/`, `data/`, `assets/`, `ui/`).
-2. Núcleo determinístico em passo fixo + self-check de determinismo (mesmos inputs → mesmo hash).
-3. Esteira por células (1 fila de slots) jogável com 1 máquina e 1 doca.
-4. Cultivo manual (loop Stardew) como primeiro gameplay vertical.
-5. Integrar sprites quando fornecidos.
+1. Fixar o mapa voxel autoral com as regiões `QUINTAL` e `CIDADE`.
+2. Implementar permissões de construção por região e o Terminal de Entrega.
+3. Criar o núcleo determinístico em passo fixo com hash por tick.
+4. Criar a oficina criativa, a grade de microvoxels e a exportação de `SchematicData`.
+5. Implementar item, inventário e uma fila de slots de tubo.
+6. Fazer tubos transparentes retos funcionarem visualmente com um item dentro.
+7. Criar uma máquina simples, a saída de produto e a rota fixa até o NPC.
+8. Implementar cultivo manual como primeiro loop jogável.
+9. Implementar Mesa de Pesquisas, schematic aprendida e catálogo de blocos-módulo do NPC.
+10. Implementar ghost, manifesto de construção e instalação exata dos blocos-módulo.
+11. Implementar venda manual, venda automática e dinheiro.
+12. Adicionar mini estufa e o primeiro ciclo completo de automação.
+13. Adicionar as cadeias de processamento e as redes de água.
+14. Adicionar energia, brownout, suspeita, metas e pesquisa avançada.
+15. Adicionar salvamento determinístico e regressões de lockstep.
+16. Integrar coop da fábrica: pesquisa, compras, ghost e obras simultâneas.
+17. Integrar arte voxel fornecida pelo desenvolvedor, UI e balanceamento.

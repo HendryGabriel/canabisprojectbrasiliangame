@@ -1,0 +1,376 @@
+<main id="weedcraft-plan" class="wc-plan" aria-labelledby="wc-title">
+  <style>
+    #weedcraft-plan {
+      --bg: #0e1512;
+      --surface: #16231d;
+      --surface-2: #101b16;
+      --text: #e7f1e9;
+      --muted: #a7b9ad;
+      --line: #2b4034;
+      --green: #7ee2a5;
+      --cyan: #78c8c4;
+      --gold: #f0cb76;
+      --red: #f49c8f;
+      color: var(--text);
+      background: var(--bg);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 20px 48px;
+    }
+    #weedcraft-plan * { box-sizing: border-box; }
+    #weedcraft-plan h1, #weedcraft-plan h2, #weedcraft-plan h3, #weedcraft-plan h4, #weedcraft-plan p { margin: 0; }
+    #weedcraft-plan h1 { max-width: 900px; font-size: clamp(2rem, 5vw, 3.8rem); line-height: 1.04; letter-spacing: -.04em; }
+    #weedcraft-plan h2 { font-size: 1.45rem; letter-spacing: -.02em; }
+    #weedcraft-plan h3 { font-size: 1.08rem; }
+    #weedcraft-plan a { color: var(--cyan); }
+    #weedcraft-plan code { color: var(--cyan); font: .88em ui-monospace, SFMono-Regular, Consolas, monospace; }
+    #weedcraft-plan .hero { display: grid; gap: 14px; padding-bottom: 26px; border-bottom: 1px solid var(--line); }
+    #weedcraft-plan .eyebrow { color: var(--green); font-size: .76rem; letter-spacing: .12em; text-transform: uppercase; }
+    #weedcraft-plan .lede { max-width: 900px; color: var(--muted); font-size: 1.04rem; }
+    #weedcraft-plan .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+    #weedcraft-plan .badge { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; color: var(--muted); font-size: .79rem; }
+    #weedcraft-plan .badge strong { color: var(--text); font-weight: 600; }
+    #weedcraft-plan .section { padding-top: 30px; }
+    #weedcraft-plan .section-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    #weedcraft-plan .muted { color: var(--muted); }
+    #weedcraft-plan .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    #weedcraft-plan .card { border: 1px solid var(--line); border-radius: 13px; padding: 15px; background: var(--surface); }
+    #weedcraft-plan .card strong { color: var(--green); }
+    #weedcraft-plan .card p { margin-top: 6px; color: var(--muted); }
+    #weedcraft-plan .baseline { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    #weedcraft-plan .flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+    #weedcraft-plan .flow > div { min-height: 100px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--surface); }
+    #weedcraft-plan .flow strong { display: block; color: var(--green); }
+    #weedcraft-plan .flow small { color: var(--muted); }
+    #weedcraft-plan .note { margin-top: 12px; border-left: 3px solid var(--gold); padding: 10px 12px; background: rgba(240,203,118,.07); color: var(--muted); }
+    #weedcraft-plan .note strong { color: var(--gold); }
+    #weedcraft-plan .phase-list { display: grid; gap: 9px; }
+    #weedcraft-plan details.phase { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: clip; }
+    #weedcraft-plan details.phase[open] { border-color: rgba(126,226,165,.55); }
+    #weedcraft-plan summary { cursor: pointer; list-style: none; padding: 14px 16px; }
+    #weedcraft-plan summary::-webkit-details-marker { display: none; }
+    #weedcraft-plan summary:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
+    #weedcraft-plan .phase-title { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    #weedcraft-plan .phase-number { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; color: var(--green); font: .78rem ui-monospace, monospace; }
+    #weedcraft-plan .phase-name { font-weight: 650; }
+    #weedcraft-plan .phase-tag { color: var(--muted); font-size: .76rem; }
+    #weedcraft-plan .phase-body { border-top: 1px solid var(--line); padding: 16px; }
+    #weedcraft-plan .phase-summary { color: var(--muted); margin-bottom: 15px; }
+    #weedcraft-plan .phase-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    #weedcraft-plan .phase-columns section { min-width: 0; }
+    #weedcraft-plan .phase-columns h4 { margin-bottom: 7px; color: var(--green); font-size: .76rem; letter-spacing: .09em; text-transform: uppercase; }
+    #weedcraft-plan ul, #weedcraft-plan ol { margin: 0; padding-left: 20px; color: var(--muted); }
+    #weedcraft-plan li + li { margin-top: 5px; }
+    #weedcraft-plan li::marker { color: var(--green); }
+    #weedcraft-plan .dep { display: inline-block; margin-top: 14px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; color: var(--cyan); font-size: .78rem; }
+    #weedcraft-plan table { width: 100%; border-collapse: collapse; background: var(--surface); }
+    #weedcraft-plan th, #weedcraft-plan td { border: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
+    #weedcraft-plan th { color: var(--green); background: var(--surface-2); }
+    #weedcraft-plan td { color: var(--muted); }
+    #weedcraft-plan .table-wrap { overflow-x: auto; border-radius: 12px; }
+    #weedcraft-plan .gate-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    #weedcraft-plan .gate { border-top: 3px solid var(--cyan); }
+    #weedcraft-plan .risk-high { color: var(--red); }
+    #weedcraft-plan .checklist { columns: 2; column-gap: 32px; }
+    #weedcraft-plan footer { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); }
+    @media (max-width: 900px) {
+      #weedcraft-plan .grid, #weedcraft-plan .gate-grid { grid-template-columns: repeat(2, 1fr); }
+      #weedcraft-plan .flow { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 600px) {
+      #weedcraft-plan { padding: 20px 14px 36px; }
+      #weedcraft-plan .grid, #weedcraft-plan .baseline, #weedcraft-plan .flow, #weedcraft-plan .phase-columns, #weedcraft-plan .gate-grid { grid-template-columns: 1fr; }
+      #weedcraft-plan .phase-title { grid-template-columns: 38px minmax(0, 1fr); }
+      #weedcraft-plan .phase-tag { grid-column: 2; }
+      #weedcraft-plan .checklist { columns: 1; }
+    }
+    @media print {
+      #weedcraft-plan { max-width: none; color: #111; background: #fff; }
+      #weedcraft-plan details.phase { break-inside: avoid; background: #fff; }
+      #weedcraft-plan details.phase:not([open]) > *:not(summary) { display: block !important; }
+      #weedcraft-plan .card, #weedcraft-plan table { background: #fff; }
+    }
+  </style>
+
+  <header class="hero">
+    <div class="eyebrow">WEEDCRAFT · plano de implementação 10/10 · 2026-07-12</div>
+    <h1 id="wc-title">Do cultivo manual à fábrica voxel cooperativa, sem saltos de dependência.</h1>
+    <p class="lede">Roadmap executável para o factory builder 3D voxel em primeira pessoa definido pelo GDD. Cada fase fecha um incremento verificável da mesma simulação determinística usada no single-player e no coop.</p>
+    <div class="badges" aria-label="Contrato principal">
+      <span class="badge"><strong>Engine</strong> Godot 4.7</span>
+      <span class="badge"><strong>Visual</strong> 3D voxel</span>
+      <span class="badge"><strong>Câmera</strong> primeira pessoa</span>
+      <span class="badge"><strong>Mundo</strong> mapa fixo</span>
+      <span class="badge"><strong>Simulação</strong> lockstep</span>
+      <span class="badge"><strong>Roadmap</strong> 16 fases</span>
+    </div>
+  </header>
+
+  <section class="section" aria-labelledby="contract-title">
+    <div class="section-head"><h2 id="contract-title">Contrato não negociável</h2><span class="muted">Uma entrega que viola estes pontos não conclui a fase.</span></div>
+    <div class="grid">
+      <article class="card"><strong>Uma simulação</strong><p>Single-player é lockstep com um jogador; toda ação autoritativa passa pela mesma fila ordenada.</p></article>
+      <article class="card"><strong>Autoridade determinística</strong><p>Tick fixo, inteiros/ponto fixo, IDs estáveis, RNG com seed e iteração explicitamente ordenada.</p></article>
+      <article class="card"><strong>3D como apresentação</strong><p>Godot interpola avatar, itens e efeitos; transforms, raycasts e physics não decidem gameplay.</p></article>
+      <article class="card"><strong>Mapa fixo</strong><p>Quintal aceita construção; cidade, NPC e rota de entrega são conteúdo protegido.</p></article>
+      <article class="card"><strong>Produto + cepa</strong><p>Itens empilham por tags; receitas são parametrizadas e preservam a cepa, salvo Blends válidos.</p></article>
+      <article class="card"><strong>Infraestrutura discreta</strong><p>Tubos de item usam células; água usa volume de rede; energia é global.</p></article>
+      <article class="card"><strong>Ameaça econômica</strong><p>Calor produz multa e confisco, nunca combate policial.</p></article>
+      <article class="card"><strong>Conteúdo substituível</strong><p>Meshes, materiais, texturas e efeitos não alteram estado, replay ou hash.</p></article>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="baseline-title">
+    <div class="section-head"><h2 id="baseline-title">Baseline real e fronteira de migração</h2><span class="muted">Não confundir o que existe com o alvo.</span></div>
+    <div class="baseline">
+      <article class="card"><h3>Existe hoje</h3><ul><li>Godot 4.7, cena principal <code>res://scenes/main.tscn</code> e controlador 3D em primeira pessoa.</li><li>Mundo voxel, editores, blueprints/structures, inventário, save e regressões herdadas.</li><li><code>src/main.gd</code> concentra responsabilidades do protótipo TRUMANCRAFT.</li></ul></article>
+      <article class="card"><h3>Ainda precisa existir</h3><ul><li>Núcleo autoritativo de fábrica, comandos, replay, hashes e lockstep.</li><li>Cultivo, tubos, máquinas, economia, calor, pesquisa e coop do GDD.</li><li><code>SchematicData</code> canônica; blueprints atuais não contam como implementação dela.</li></ul></article>
+    </div>
+    <p class="note"><strong>Regra de migração:</strong> reutilizar voxel, câmera, editores e assets somente quando servirem como apresentação ou ferramenta. Nenhum estado herdado vira autoritativo sem passar pelo contrato determinístico e por uma regressão.</p>
+  </section>
+
+  <section class="section" aria-labelledby="architecture-title">
+    <div class="section-head"><h2 id="architecture-title">Fluxo mínimo da arquitetura</h2><span class="muted">A dependência segue da esquerda para a direita; render nunca retorna decisões à simulação.</span></div>
+    <div class="flow">
+      <div><strong>Dados</strong><small>catálogos versionados, mapa, receitas, preços e schematics</small></div>
+      <div><strong>Intenções</strong><small>input local transforma ação em payload canônico</small></div>
+      <div><strong>Comandos</strong><small>tick, jogador, sequência, tipo e payload</small></div>
+      <div><strong>Simulação</strong><small>valida, ordena, reduz, emite resultado e hash</small></div>
+      <div><strong>Snapshot</strong><small>save, replay, coop e diagnóstico usam os mesmos bytes</small></div>
+      <div><strong>Apresentação</strong><small>Godot 3D interpola snapshots e exibe feedback</small></div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="roadmap-title">
+    <div class="section-head"><h2 id="roadmap-title">Roadmap acíclico — 16 fases</h2><span class="muted">Abra uma fase para ver entregáveis, pronto e testes.</span></div>
+    <div class="phase-list">
+
+      <details class="phase" id="phase-01" open>
+        <summary><span class="phase-title"><span class="phase-number">01</span><span class="phase-name">Contrato e matriz de migração</span><span class="phase-tag">fundação</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Criar uma única fronteira de integração entre o protótipo voxel e o novo runtime de fábrica.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Inventário dos símbolos atuais: reutilizar na apresentação, adaptar temporariamente, substituir ou aposentar após gate.</li><li>Pastas conceituais <code>data/</code>, <code>sim/</code>, <code>commands/</code>, <code>persistence/</code>, <code>network/</code> e <code>presentation/</code>.</li><li>Um adaptador de snapshot para a cena atual, sem refatorar sistemas não tocados.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Nenhum sistema planejado é declarado existente.</li><li>Cada componente herdado tem destino e gate de retirada objetivos.</li><li>Godot 4.7, 3D voxel e primeira pessoa estão fixados nos documentos.</li></ul></section>
+          <section><h4>Testes</h4><ul><li><code>tests/main_smoke.gd</code> continua iniciando a cena.</li><li>Revisão confirma ausência de alterações incidentais no legado.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Renomear ou reescrever todo o projeto.</li><li>Implementar gameplay de fábrica.</li></ul></section>
+        </div><span class="dep">Dependências: nenhuma</span></div>
+      </details>
+
+      <details class="phase" id="phase-02">
+        <summary><span class="phase-title"><span class="phase-number">02</span><span class="phase-name">Núcleo determinístico</span><span class="phase-tag">simulação</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Definir o contrato que todos os sistemas autoritativos usarão, antes do primeiro conteúdo.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li><code>SimState</code>, <code>SimRunner</code> e envelope <code>{tick, player_id, sequence, type, payload}</code>.</li><li>Ordenação total, rejeições determinísticas, no-op, IDs estáveis e RNG por seed.</li><li>Snapshot/bytes canônicos versionados, hash por tick, replay e primeira divergência.</li><li>Single-player usando a mesma fila de comandos do coop.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Dois runners com os mesmos comandos geram bytes e hashes iguais em todo tick.</li><li>Ordens diferentes de inserção em coleções não alteram o resultado.</li><li>Delta, relógio, transforms, physics e RNG global não são lidos.</li></ul></section>
+          <section><h4>Testes</h4><ul><li><code>tests/sim_determinism.gd</code> compara dois runners e todos os hashes.</li><li>Golden vector de comando, snapshot e hash.</li><li>Replay com inserção invertida e timing visual diferente.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Sockets ou lobby.</li><li>Estado de Nodes dentro do snapshot.</li></ul></section>
+        </div><span class="dep">Dependências: 01</span></div>
+      </details>
+
+      <details class="phase" id="phase-03">
+        <summary><span class="phase-title"><span class="phase-number">03</span><span class="phase-name">Mapa fixo e regiões</span><span class="phase-tag">mundo</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Transformar o mapa autoral versionado em estado e permissões de gameplay.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Mapa pequeno de teste com seed e hash fixos; asset final pode substituí-lo sem mudar regras.</li><li>Regiões <code>QUINTAL</code>, <code>CIDADE</code>, <code>ROTA_FIXA</code> e <code>BLOQUEADO</code>.</li><li>Casa, PC, bancada, cultivo, recursos, terminal, caminho e NPC em posições validadas.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Construir/remover no quintal funciona; na cidade falha com código determinístico.</li><li>Mapa, limites e regiões não crescem durante a partida.</li><li>A rota depois do terminal não pode ser editada nem bloqueada pelo jogador.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Hash e round-trip do mapa.</li><li>Matriz de permissões para voxel, tubo, cultivo e máquina.</li><li>Rejeição nas duas faces da fronteira.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Mapa infinito, novos lotes ou sandbox na cidade.</li><li>Exigir arte final do mapa.</li></ul></section>
+        </div><span class="dep">Dependências: 01–02</span></div>
+      </details>
+
+      <details class="phase" id="phase-04">
+        <summary><span class="phase-title"><span class="phase-number">04</span><span class="phase-name">Avatar autoritativo e interação 3D</span><span class="phase-tag">jogador</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Manter a sensação em primeira pessoa sem deixar a física do Godot decidir alcance ou resultado.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Pose, velocidade, yaw/pitch quantizados, gravidade, pulo e colisão voxel em tick fixo.</li><li>Comandos de movimento e interação; alvo é célula/ID, não resultado de raycast.</li><li>Sim valida alcance, linha de interação, duração e permissão.</li><li><code>CharacterBody3D</code> apresenta/interpola e pode prever sem virar autoridade.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Dois runners reproduzem movimento, colisão, pulo e interação.</li><li>FPS e raycasts visuais diferentes não alteram inventário ou mundo.</li><li>Avatar atravessa cidade, mas não constrói nela.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Trajeto golden com colisão e pulo.</li><li>Interação fora do alcance e alvo inválido.</li><li>Apresentação a 30/60/144 FPS com hashes iguais.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Combate ou criaturas como requisito.</li><li>Colisão autoritativa de <code>move_and_slide</code>.</li></ul></section>
+        </div><span class="dep">Dependências: 02–03</span></div>
+      </details>
+
+      <details class="phase" id="phase-05">
+        <summary><span class="phase-title"><span class="phase-number">05</span><span class="phase-name">Itens, cepas, inventário e cultivo manual</span><span class="phase-tag">primeiro produto</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Produzir buds vendáveis sem depender de automação ou oficina.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Catálogo: Ruderalis; Jack Herer, Sour Diesel, Durban Poison; Northern Lights, Granddaddy Purple, Purple Kush; Blue Dream, GSC e OG Kush.</li><li>Stacks por <code>{produto, cepa}</code>, preço/THC no catálogo e receitas parametrizadas.</li><li>Blend somente entre duas cepas da mesma categoria; Ruderalis não entra.</li><li>Inventário pequeno; plantar, molhar, esperar ticks e colher N buds.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Itens iguais empilham e diferentes não se fundem.</li><li>Progressão/preço segue a tabela de cepas, sem qualidade float por unidade.</li><li>O ciclo manual se repete com duração e rendimento idênticos.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Catálogo e round-trip dos dados.</li><li>Combinações válidas/inválidas de Blend.</li><li>Água insuficiente, colheita, capacidade e reinício do cultivo.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Luz/nutrientes detalhados.</li><li>Estufas ou produção automática de sementes.</li></ul></section>
+        </div><span class="dep">Dependências: 02–04</span></div>
+      </details>
+
+      <details class="phase" id="phase-06">
+        <summary><span class="phase-title"><span class="phase-number">06</span><span class="phase-name">Economia compartilhada e venda manual</span><span class="phase-tag">loop inicial</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Fechar cultivar → carregar → vender → comprar sem máquinas.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Dinheiro e ledger pertencem à fábrica, inclusive no single-player.</li><li>PC vende sementes, materiais iniciais, tubos e upgrades desbloqueados.</li><li>NPC compra produto; transferência limitada pelo inventário é atômica.</li><li>Preço por cepa/produto e metas recebem eventos ordenados.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Venda remove exatamente o estoque aceito e credita uma vez.</li><li>Compra insuficiente/duplicada é rejeitada sem mutação parcial.</li><li>Não existe compra de terreno nem máquina schematic completa no PC.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Saldo, preço, capacidade e atomicidade.</li><li>Dois comandos concorrentes usam a ordem canônica.</li><li>Replay completo de cultivo e venda manual.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Peças de schematic no NPC.</li><li>Conta de luz e venda automática.</li></ul></section>
+        </div><span class="dep">Dependências: 03–05</span></div>
+      </details>
+
+      <details class="phase" id="phase-07">
+        <summary><span class="phase-title"><span class="phase-number">07</span><span class="phase-name">Vertical slice: máquina, tubos e terminal</span><span class="phase-tag">fábrica mínima</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Provar a fábrica com uma fixture versionada antes de construir a oficina.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Uma máquina 1×1×1 pré-cadastrada consome buds e produz Maconha Pura.</li><li>Tubos retos, curvas e subida com slots discretos e atualização ordenada.</li><li>Backpressure: cheio bloqueia sem destruir, duplicar ou reordenar itens.</li><li>Terminal filtra produtos; rota protegida entrega lote e NPC paga.</li><li>Visual transparente interpola itens entre slots.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Cultivar → processar → transportar → vender funciona do início ao fim.</li><li>Bloqueio e conexão inválida têm feedback e zero perda.</li><li>Visual desligado ou em FPS diferente mantém todos os hashes.</li></ul></section>
+          <section><h4>Testes</h4><ul><li><code>tests/factory_vertical_slice.gd</code>.</li><li>Capacidade, backpressure, curva, subida, endpoint e produto inválido.</li><li>Dois runners por pelo menos 10 mil ticks.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Junções, filtros ou autoria de máquinas.</li><li>Bloqueio da rota fixa, que é não editável.</li></ul></section>
+        </div><span class="dep">Dependências: 02–06</span></div>
+      </details>
+
+      <details class="phase" id="phase-08">
+        <summary><span class="phase-title"><span class="phase-number">08</span><span class="phase-name">Save, recuperação e diagnóstico</span><span class="phase-tag">persistência</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Persistir somente o estado autoritativo e continuar sem alterar a linha do tempo.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Save versionado contendo tick, seed, versões de dados, IDs, mapa, avatar, inventários, cultivo, economia, máquinas, tubos e filas.</li><li>Validação de hash/catálogo antes de liberar o jogador.</li><li>Relatório de primeira divergência por domínio e entidade.</li><li>Migração somente quando existir uma mudança real de versão.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Salvar e continuar produz os mesmos hashes de um run ininterrupto.</li><li>NodePaths e assets visuais não aparecem no estado.</li><li>Save incompatível falha com diagnóstico e sem sobrescrever o original.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Round-trip em tubo cheio, máquina processando e cultivo ativo.</li><li>Save → load → mais 1.000 ticks contra run contínuo.</li><li>Corrupção, versão desconhecida e catálogo divergente.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Cloud save.</li><li>Compatibilidade especulativa com versões inexistentes.</li></ul></section>
+        </div><span class="dep">Dependências: 02–07</span></div>
+      </details>
+
+      <details class="phase" id="phase-09">
+        <summary><span class="phase-title"><span class="phase-number">09</span><span class="phase-name">Runtime de schematics e construção</span><span class="phase-tag">progressão física</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Validar consumo e montagem de uma schematic fixture antes da ferramenta que a cria.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li><code>SchematicData</code> fixture com ID/versão/hash, peças, microvoxels, pivot, rotações/espelhamento, envelope, portas, comportamento, pesquisa e catálogo.</li><li>Pesquisa compartilhada desbloqueia no NPC somente os <code>machine_block_id</code> necessários.</li><li>Blocos empilham, entram no inventário/armazenamento e nunca se auto-instalam.</li><li>Ghost antes da compra; confirmação cria canteiro e manifesto exatos.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Máquina ativa apenas com peças, coordenadas, rotações, portas e conexões obrigatórias completas.</li><li>Comandos conflitantes não duplicam dinheiro ou blocos.</li><li>Hash, pesquisa, catálogo e manifesto sobrevivem ao save.</li></ul></section>
+          <section><h4>Testes</h4><ul><li><code>tests/schematic_runtime.gd</code> e <code>tests/construction_manifest.gd</code>.</li><li>Peça errada, posição errada, dupla instalação e desmontagem.</li><li>Pesquisa/compra/construção em dois runners.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Editor microvoxel.</li><li>Código arbitrário dentro da schematic.</li></ul></section>
+        </div><span class="dep">Dependências: 02–08</span></div>
+      </details>
+
+      <details class="phase" id="phase-10">
+        <summary><span class="phase-title"><span class="phase-number">10</span><span class="phase-name">Coop lockstep</span><span class="phase-tag">rede</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Transportar os comandos já determinísticos sem transmitir estado final.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Handshake de versão, seed, mapa, catálogos e hashes de schematics.</li><li>Input delay fixo, no-op explícito, janela de comandos e ordem <code>tick/player/sequence</code>.</li><li>Política de pausa/desconexão e encerramento de sessão fora do reducer de gameplay.</li><li>Diagnóstico de desync com primeiro tick divergente; sem aceitar posição de item ou snapshot final como autoridade.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Dois peers têm o mesmo hash em todo tick do vertical slice e da construção.</li><li>Compras e instalações simultâneas resolvem uma vez na ordem canônica.</li><li>Frame rate, latência simulada e ordem de chegada não alteram resultado.</li></ul></section>
+          <section><h4>Testes</h4><ul><li><code>tests/lockstep_regression.gd</code> e <code>tests/coop_schematic_build.gd</code>.</li><li>Atraso, duplicação, reordenação e comando tardio.</li><li>Peer desconectado no tick acordado.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Join-in-progress ou servidor autoritativo.</li><li>Correção silenciosa de desync.</li></ul></section>
+        </div><span class="dep">Dependências: 02–09</span></div>
+      </details>
+
+      <details class="phase" id="phase-11">
+        <summary><span class="phase-title"><span class="phase-number">11</span><span class="phase-name">Oficina de autoria</span><span class="phase-tag">ferramenta de conteúdo</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Produzir o formato de runtime já validado em um mundo criativo isolado.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Superplano sem dinheiro, calor ou progressão; grade inteira de 1/4 de voxel.</li><li>Voxels 1×, 1/2× e 1/4× agrupados em blocos-módulo vendáveis.</li><li>Editor de footprint, pivot, colisão, envelope, portas, consumo, rede, comportamento e requisitos.</li><li>Exportador canônico que rejeita voxel desconhecido, duplicata, fora do envelope, porta inválida e dado não serializável.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Exportar/importar gera bytes e hash iguais em runners separados.</li><li>A schematic exportada conclui todo o fluxo da fase 09.</li><li>Somente IDs de comportamento registrados são aceitos.</li></ul></section>
+          <section><h4>Testes</h4><ul><li><code>tests/schematic_roundtrip.gd</code> com golden bytes.</li><li>Cada regra de rejeição tem caso negativo.</li><li>Rotação, espelhamento, portas e envelope.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Microvoxels livres na partida normal.</li><li>Scripts exportados pelo autor.</li></ul></section>
+        </div><span class="dep">Dependências: 09–10</span></div>
+      </details>
+
+      <details class="phase" id="phase-12">
+        <summary><span class="phase-title"><span class="phase-number">12</span><span class="phase-name">Água, energia e conta de luz</span><span class="phase-tag">infraestrutura</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Adicionar recursos compartilhados sem simular física contínua.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Rede de água por conectividade e volume compartilhado; distribuição ordenada.</li><li>Geração/consumo global de energia e cobrança periódica proporcional ao consumo.</li><li>Brownout em razão inteira/ponto fixo reduz máquinas e tubos.</li><li>Solar e biomassa de madeira/restos como geração própria.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Consumo simultâneo resolve na mesma ordem em todo peer.</li><li>Conta nunca depende de delta visual e não debita duas vezes.</li><li>Recuperar água/energia retoma produção sem perder itens.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Merge/split de rede, volume insuficiente e consumidores concorrentes.</li><li>Conta de luz por janela de ticks.</li><li>Brownout e recuperação de máquina e tubo.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Pressão por segmento.</li><li>Postes ou área de cobertura.</li></ul></section>
+        </div><span class="dep">Dependências: 02, 07–10</span></div>
+      </details>
+
+      <details class="phase" id="phase-13">
+        <summary><span class="phase-title"><span class="phase-number">13</span><span class="phase-name">Cultivo automático e sementes</span><span class="phase-tag">automação</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Automatizar o cultivo somente depois de tubos, água e energia estarem estáveis.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Mini estufa recebe semente e água, consome energia, produz buds e replanta.</li><li>Grande estufa reutiliza a lógica com footprint, capacidade e throughput diferentes.</li><li>Subprocesso pesquisável produz sementes automaticamente por cepa.</li><li>Estados de espera expõem falta de semente, água, energia ou espaço na saída.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Produção contínua funciona sem avatar presente.</li><li>Bloqueio não consome insumo indevido nem perde output.</li><li>Múltiplas estufas mantêm hashes iguais no coop.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Ciclo, replantio, falta de cada recurso e saída cheia.</li><li>Produção de sementes para cada cepa.</li><li>Throughput comparado entre footprints.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Nutrientes ou iluminação detalhados.</li><li>Lógica duplicada por cepa.</li></ul></section>
+        </div><span class="dep">Dependências: 05, 07, 09–12</span></div>
+      </details>
+
+      <details class="phase" id="phase-14">
+        <summary><span class="phase-title"><span class="phase-number">14</span><span class="phase-name">Processamento e logística avançada</span><span class="phase-tag">conteúdo</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Completar o grafo por dados, sem duplicar máquinas por cepa.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Prensado na bancada manual; Pura; Blend com dois inputs; Haxixe; Ice com maconha + água/gelo; CBD com vidro + maconha + água; Baseado com maconha + seda.</li><li>Extrator de madeira, seda automática, gelo de água e vidro de areia/sílica.</li><li>Footprints/portas variados, junções com arbitragem determinística e filtros por tags.</li><li>Validador de receitas e ciclos impossíveis antes da partida.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Todas as cadeias cabem no quintal e vendem pelo mesmo terminal.</li><li>Cepa é preservada ou vira Blend da categoria correta.</li><li>Junção congestionada não perde item e é reproduzível.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Cada receita e insumo, incluindo casos inválidos.</li><li>Round-robin/prioridade de junção com ordem fixa.</li><li>Rede congestionada longa em dois peers.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Receitas duplicadas por cepa.</li><li>Transporte contínuo baseado em física.</li></ul></section>
+        </div><span class="dep">Dependências: 05, 07, 09–13</span></div>
+      </details>
+
+      <details class="phase" id="phase-15">
+        <summary><span class="phase-title"><span class="phase-number">15</span><span class="phase-name">Calor, progressão e vitória</span><span class="phase-tag">estratégia</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Criar pressão econômica e conclusão sem transformar o jogo em combate.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Calor por cheiro, movimento, visibilidade, produção e volume de venda.</li><li>Mitigação por filtro de carvão, muros, cercas e fachada legal.</li><li>Batida determinística escolhe multa/confisco por regra e seed explícitas.</li><li>Metas e pesquisa avançada desbloqueiam tiers, eficiência, capacidade, risco e schematics.</li><li>Vitória por marco configurado de produção/aposentadoria milionária; sandbox continua.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Todo aumento/redução de calor é explicável no ledger.</li><li>Batida nunca inicia combate.</li><li>Meta e vitória disparam uma vez e sobrevivem ao save/coop.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Fontes, mitigadores, limiar, multa e confisco.</li><li>Pesquisa concorrente e pré-requisitos.</li><li>Vitória e continuação por 1.000 ticks.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Combate policial.</li><li>Expansão de terreno após a vitória.</li></ul></section>
+        </div><span class="dep">Dependências: 06, 09–14</span></div>
+      </details>
+
+      <details class="phase" id="phase-16">
+        <summary><span class="phase-title"><span class="phase-number">16</span><span class="phase-name">Arte, UI, desempenho e release</span><span class="phase-tag">entrega</span></span></summary>
+        <div class="phase-body"><p class="phase-summary">Trocar placeholders, tornar gargalos legíveis e fechar critérios mensuráveis.</p><div class="phase-columns">
+          <section><h4>Entregáveis</h4><ul><li>Meshes voxel, materiais, tubos transparentes, itens 3D e efeitos substituíveis.</li><li>UI 1280×720 para PC, inventário, pesquisa, construção, energia, calor, metas e desync.</li><li>Feedback de célula, recurso, backpressure, conexão, brownout e calor.</li><li>Orçamentos registrados de tick, memória, tubos/máquinas e latência de input.</li></ul></section>
+          <section><h4>Definição de pronto</h4><ul><li>Jogador identifica onde e por que uma linha parou.</li><li>Trocar ou ocultar apresentação não muda hash.</li><li>Vertical slice, save e coop passam no build de release dentro dos orçamentos aprovados.</li></ul></section>
+          <section><h4>Testes</h4><ul><li>Suite factory completa e regressões herdadas ainda relevantes.</li><li>Acessibilidade de menus, viewport e redução de movimento.</li><li>Benchmark fixo de mapa cheio e soak coop.</li></ul></section>
+          <section><h4>Fora desta fase</h4><ul><li>Novos mapas, modos ou conteúdo sem gate.</li><li>Arte influenciando regras.</li></ul></section>
+        </div><span class="dep">Dependências: 01–15</span></div>
+      </details>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="gates-title">
+    <div class="section-head"><h2 id="gates-title">Gates de produto</h2><span class="muted">Não avançar apenas porque tarefas foram marcadas.</span></div>
+    <div class="gate-grid">
+      <article class="card gate"><strong>G1 · Fundação</strong><p>Fases 01–04: replay golden reproduz mapa e avatar em dois runners.</p></article>
+      <article class="card gate"><strong>G2 · Vertical slice</strong><p>Fases 05–08: cultivar, vender, processar, transportar, salvar e continuar.</p></article>
+      <article class="card gate"><strong>G3 · Coop</strong><p>Fases 09–11: dois peers pesquisam, compram, constroem e exportam sem divergência.</p></article>
+      <article class="card gate"><strong>G4 · Release</strong><p>Fases 12–16: conteúdo completo, risco, vitória, legibilidade e orçamento.</p></article>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="trace-title">
+    <div class="section-head"><h2 id="trace-title">Rastreabilidade integral do GDD</h2><span class="muted">Cada seção possui fase dona e evidência executável.</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>GDD</th><th>Requisito coberto</th><th>Fases</th><th>Evidência principal</th></tr></thead>
+      <tbody>
+        <tr><td>1–2</td><td>3D voxel, primeira pessoa, mapa fixo, coop, pilares travados</td><td>01–04</td><td>Contrato documental + smoke + replay de avatar</td></tr>
+        <tr><td>3</td><td><code>{produto, cepa}</code>, stacks, receitas e Blend</td><td>05, 14</td><td>Catálogo, empilhamento e matriz de Blend</td></tr>
+        <tr><td>4</td><td>Dez cepas, categorias, preço/THC e Ruderalis</td><td>05</td><td>Validação integral do catálogo</td></tr>
+        <tr><td>5 · cultivo</td><td>Manual, estufas e sementes automáticas</td><td>05, 13</td><td>Ciclos determinísticos e falta de recursos</td></tr>
+        <tr><td>5 · processamento</td><td>Sete produtos e quatro subprocessos físicos</td><td>07, 14</td><td>Regressão de cada receita parametrizada</td></tr>
+        <tr><td>5 · tubos</td><td>Slots, curvas, subida, backpressure, junções e filtros</td><td>07, 14</td><td>Transporte sem perda e arbitragem fixa</td></tr>
+        <tr><td>5 · schematics</td><td>Oficina, schema, pesquisa, ghost, manifesto e montagem</td><td>09, 11</td><td>Golden bytes + construção completa</td></tr>
+        <tr><td>6</td><td>PC, NPC, peças, vendas, preços, conta e metas</td><td>06, 09, 12, 15</td><td>Ledger, compras concorrentes e conta por ticks</td></tr>
+        <tr><td>7</td><td>Energia global, brownout, solar e biomassa</td><td>12</td><td>Regressão de consumo, cobrança e recuperação</td></tr>
+        <tr><td>8</td><td>Calor, mitigação, multa/confisco e ausência de combate</td><td>15</td><td>Ledger de calor e batida determinística</td></tr>
+        <tr><td>9</td><td>Sim, render, autoria, hash e coop lockstep</td><td>02, 04, 08–12</td><td>Golden snapshot, save-continue e dois peers</td></tr>
+        <tr><td>10</td><td>Avatar, inventário, alcance, ghost e interação</td><td>04–06, 09</td><td>Trajeto/reach golden e manifesto</td></tr>
+        <tr><td>11</td><td>Quintal, cidade e fronteira protegida</td><td>03, 07</td><td>Matriz de permissões e rota fixa</td></tr>
+        <tr><td>12</td><td>Não objetivos do v1</td><td>Todas</td><td>Exclusões por fase + checklist abaixo</td></tr>
+        <tr><td>13</td><td>Ordem de implementação</td><td>01–16</td><td>DAG e gates G1–G4</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="section" aria-labelledby="risks-title">
+    <div class="section-head"><h2 id="risks-title">Riscos que bloqueiam avanço</h2><span class="muted">Cada risco tem uma resposta verificável.</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Risco</th><th>Sinal</th><th>Resposta obrigatória</th></tr></thead>
+      <tbody>
+        <tr><td class="risk-high">Estado autoritativo volta ao Godot</td><td>Teste depende de transform, physics ou frame</td><td>Mover a decisão ao reducer e adicionar dois runners com FPS distinto.</td></tr>
+        <tr><td class="risk-high">DAG volta a ficar circular</td><td>DoD cita sistema de fase posterior</td><td>Dividir fixture/runtime/ferramenta; nenhuma dependência pode apontar para frente.</td></tr>
+        <tr><td class="risk-high">Desync invisível</td><td>Compara apenas hash final</td><td>Comparar todo tick e registrar primeiro domínio/entidade divergente.</td></tr>
+        <tr><td>Oficina domina o cronograma</td><td>Vertical slice espera editor</td><td>Manter fixture versionada como entrada do runtime até G2.</td></tr>
+        <tr><td>Conteúdo duplica lógica</td><td>Uma classe/receita por cepa</td><td>Catálogo e receitas parametrizadas com testes matriciais.</td></tr>
+        <tr><td>Legado contamina o núcleo</td><td><code>src/main.gd</code> vira dono da sim</td><td>Adaptador unidirecional de snapshot e gate de retirada por componente.</td></tr>
+        <tr><td>Escala falha tarde</td><td>Tick estoura só no release</td><td>Benchmark fixo desde G2; aprovar números antes de ampliar conteúdo.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="section" aria-labelledby="non-goals-title">
+    <div class="section-head"><h2 id="non-goals-title">Não objetivos do v1</h2><span class="muted">Lista única para impedir expansão silenciosa.</span></div>
+    <div class="card"><ul class="checklist">
+      <li>Transporte contínuo ou decidido por física.</li><li>Pressão de fluido por segmento.</li><li>Compra de lotes ou expansão do mapa.</li><li>Mapa infinito ou novos biomas durante a partida.</li><li>Construção livre na cidade.</li><li>Veículos autônomos de entrega.</li><li>Microvoxels livres no mapa normal.</li><li>Schematics com scripts arbitrários.</li><li>Postes ou cobertura elétrica local.</li><li>Combate com a polícia.</li><li>Qualidade/THC float por unidade.</li><li>Luz e nutrientes detalhados no cultivo.</li><li>Join-in-progress antes de requisito aprovado.</li><li>Arte final como pré-condição do vertical slice.</li>
+    </ul></div>
+  </section>
+
+  <section class="section" aria-labelledby="release-title">
+    <div class="section-head"><h2 id="release-title">Checklist de nota 10 e release</h2><span class="muted">Todos os itens precisam de evidência, não apenas intenção.</span></div>
+    <div class="card"><ul class="checklist">
+      <li>16 fases com dependências somente anteriores.</li><li>Todos os estados autoritativos entram no hash.</li><li>Todo comando tem ordem, validação e resultado canônicos.</li><li>Single-player usa a mesma fila do coop.</li><li>Dois runners com timing visual diferente coincidem.</li><li>Save-continue equivale ao run contínuo.</li><li>Mapa/cidade/rota respeitam permissões.</li><li>Tubos bloqueados nunca perdem item.</li><li>Catálogo cobre todas as cepas e produtos.</li><li>PC e NPC têm catálogos sem sobreposição indevida.</li><li>Schematic round-trip mantém bytes e hash.</li><li>Compra/construção concorrentes são atômicas.</li><li>Conta e brownout usam ticks.</li><li>Calor não inicia combate.</li><li>Vitória mantém o sandbox.</li><li>Trocar apresentação não muda hash.</li><li>Benchmarks possuem cenário e orçamento aprovados.</li><li>Regressões executadas estão registradas sem falsos passes.</li>
+    </ul></div>
+  </section>
+
+  <footer>Autoridade: <code>GDD.md</code> · Engine: Godot 4.7 · Produto: WEEDCRAFT 3D voxel em primeira pessoa · Ordem: contrato → simulação → vertical slice → runtime → coop → autoria → conteúdo → release.</footer>
+</main>
