@@ -14,6 +14,9 @@ const BEDROCK_Y: int = -65
 
 func generate_into(world, tile, registry, seed: int):
 	var report = GenerationReportScript.new()
+	report.seed = seed
+	if tile != null:
+		report.tile_coord = tile.tile_coord
 	if world == null or tile == null:
 		report.add_error("VoxelWorld ou TerrainTile ausente.")
 		return report
@@ -22,6 +25,8 @@ func generate_into(world, tile, registry, seed: int):
 	if registry != null:
 		for error in registry.validate():
 			report.add_error(error)
+		for warning in registry.get_diagnostics():
+			report.add_warning(warning)
 	if not report.is_ok():
 		return report
 	for z in range(TerrainTileScript.TILE_SIZE):
@@ -32,7 +37,7 @@ func generate_into(world, tile, registry, seed: int):
 	if registry != null:
 		var placer = StructurePlacerScript.new()
 		var instances: Array = placer.plan_instances(world, tile, registry, seed, report)
-		placer.apply_instances(world, tile, instances, report)
+		placer.apply_instances(world, tile, registry, instances, report)
 	_generate_vegetation(world, tile, seed, report)
 	return report
 
@@ -107,11 +112,12 @@ func _generate_vegetation(world, tile, seed: int, report) -> void:
 			var surface_y: int = tile.get_height(x, z)
 			var world_x: int = tile.tile_coord.x * TerrainTileScript.TILE_SIZE + x
 			var world_z: int = tile.tile_coord.y * TerrainTileScript.TILE_SIZE + z
-			if world.get_block_id(Vector3i(world_x, surface_y, world_z)) != "grass" or world.has_block(Vector3i(world_x, surface_y + 1, world_z)):
+			var vegetation_pos: Vector3i = Vector3i(world_x, surface_y + 1, world_z)
+			if world.get_block_id(Vector3i(world_x, surface_y, world_z)) != "grass" or world.has_block(vegetation_pos) or _inside_structure_reservation(vegetation_pos, report.instances):
 				continue
 			var roll: float = _hash01(world_x, surface_y, world_z, seed + 707)
 			if tile.has_zone_flag(x, z, TerrainTileScript.ZONE_FOREST) and roll < 0.025:
-				_place_tree(world, tile, Vector3i(world_x, surface_y + 1, world_z), seed, report)
+				_place_tree(world, tile, vegetation_pos, seed, report)
 			elif tile.has_zone_flag(x, z, TerrainTileScript.ZONE_DECORATION) and roll < 0.13:
 				var decor_roll: float = _hash01(world_x, surface_y, world_z, seed + 808)
 				var decor_id: String = "short_grass" if decor_roll < 0.58 else ("wild_grass" if decor_roll < 0.78 else ("dandelion" if decor_roll < 0.88 else ("poppy" if decor_roll < 0.96 else "cornflower")))
@@ -122,7 +128,8 @@ func _generate_vegetation(world, tile, seed: int, report) -> void:
 func _place_tree(world, tile, base: Vector3i, seed: int, report) -> void:
 	var height: int = 4 + int(floor(_hash01(base.x, base.y, base.z, seed + 505) * 3.0))
 	for offset in range(height):
-		if world.set_base_block(base + Vector3i(0, offset, 0), "wood"):
+		var trunk_pos: Vector3i = base + Vector3i(0, offset, 0)
+		if not _inside_structure_reservation(trunk_pos, report.instances) and world.set_base_block(trunk_pos, "wood"):
 			report.generated_blocks += 1
 	var center: Vector3i = base + Vector3i(0, height, 0)
 	for dy in range(-2, 3):
@@ -134,9 +141,19 @@ func _place_tree(world, tile, base: Vector3i, seed: int, report) -> void:
 				var pos: Vector3i = center + Vector3i(dx, dy, dz)
 				var local_x: int = pos.x - tile.tile_coord.x * TerrainTileScript.TILE_SIZE
 				var local_z: int = pos.z - tile.tile_coord.y * TerrainTileScript.TILE_SIZE
-				if tile.index_of(local_x, local_z) >= 0 and not tile.has_zone_flag(local_x, local_z, TerrainTileScript.ZONE_PROTECTED) and not world.has_block(pos):
+				if tile.index_of(local_x, local_z) >= 0 and not tile.has_zone_flag(local_x, local_z, TerrainTileScript.ZONE_PROTECTED) and not world.has_block(pos) and not _inside_structure_reservation(pos, report.instances):
 					if world.set_base_block(pos, "leaves"):
 						report.generated_blocks += 1
+
+
+static func _inside_structure_reservation(pos: Vector3i, instances: Array) -> bool:
+	for raw_instance in instances:
+		var instance: Dictionary = raw_instance as Dictionary
+		var minimum: Vector3i = instance.get("origin", Vector3i.ZERO)
+		var maximum: Vector3i = instance.get("max", minimum)
+		if pos.x >= minimum.x and pos.x <= maximum.x and pos.y >= minimum.y and pos.y <= maximum.y and pos.z >= minimum.z and pos.z <= maximum.z:
+			return true
+	return false
 
 
 static func _hash01(x: int, y: int, z: int, salt: int) -> float:

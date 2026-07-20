@@ -145,17 +145,18 @@ Ela serve para o desenvolvedor criar máquinas voxel novas e exportá-las para o
 catálogo de conteúdo do jogo.
 
 - A oficina abre um mundo criativo/superplano isolado, sem dinheiro, heat ou progressão.
-- O autor constrói com voxels de tamanho normal, metade ou um quarto do voxel de gameplay.
-- Internamente, a oficina usa uma unidade fixa de **1/4 de voxel**. Um voxel normal ocupa
-  4×4×4 microvoxels; um voxel de metade ocupa 2×2×2 e um de quarto ocupa 1×1×1.
-- Esses microvoxels formam **blocos-módulo grandes**. O jogador não compra nem instala
-  microvoxels individualmente durante a partida normal.
+- O autor constrói com voxels de tamanho normal, metade, um quarto ou um oitavo do voxel de gameplay.
+- Internamente, a oficina usa uma unidade fixa de **1/8 de voxel**. Um voxel normal ocupa
+  8×8×8 microvoxels; metade ocupa 4×4×4, um quarto ocupa 2×2×2 e um oitavo ocupa 1×1×1.
+- Esses microvoxels formam Custom Blocks, padrões colocáveis e peças de multiblocos. Formações
+  capturadas ou exportadas podem existir como itens reais durante a partida normal.
 - Cada bloco-módulo é uma unidade do catálogo de blocos voxel do runtime, equivalente
   aos blocos grandes já existentes no projeto Godot. A diferença é que sua aparência
   pode ser composta internamente por microvoxels da oficina.
 - O autor define a aparência e a estrutura, mas também informa footprint, pivot, colisão,
   portas de tubo, entradas, saídas, consumo de energia, rede de água e comportamento.
-- A exportação gera uma `SchematicData` versionada com:
+- A exportação gera um `StructureTemplate V4` canônico como `Custom Block`, `Multiblock` ou
+  `Structure`, contendo:
   - ID e versão da máquina;
   - hash canônico do conteúdo;
   - lista de cada bloco-módulo/peça macro e sua coordenada local na grade da máquina;
@@ -177,16 +178,16 @@ catálogo de conteúdo do jogo.
    qualquer lugar válido do quintal, antes de comprar os materiais.
 5. O ghost mostra footprint, pivot, portas, altura, colisões e cada posição que será
    preenchida. A simulação valida a área, mas ainda não consome peças.
-6. Ao confirmar, nasce um canteiro de construção com um manifesto exato de peças:
-   cada entrada aponta para `voxel_id`, coordenada local e rotação da peça.
+6. Ao confirmar uma montagem, a peça-âncora cria uma receita espacial com ghosts exatos:
+   cada entrada aponta para `asset_id` ou `voxel_id`, coordenada local e rotação da peça.
 7. O NPC comerciante da cidade passa a vender cada bloco-módulo grande da schematic
    aprendida. Cada bloco vendido já contém os microvoxels construídos na autoria.
 8. O jogador compra os blocos-módulo, leva-os ao quintal e os instala no canteiro
    seguindo o manifesto. A obra só ativa o comportamento quando todas as peças obrigatórias,
    portas e conexões estiverem completas.
 
-No jogo normal, o jogador não constrói microvoxels livremente fora de uma schematic.
-Ele posiciona o projeto inteiro e monta as peças autorizadas pelo manifesto. O sistema
+No jogo normal, o jogador pode posicionar Custom Blocks e padrões de microvoxels exportados.
+Ele também posiciona o projeto inteiro ou monta as peças autorizadas pelo manifesto. O sistema
 de tubos pode receber materiais para a obra em uma etapa futura; o primeiro fluxo usa
 inventário e colocação manual para manter o escopo controlado.
 
@@ -281,15 +282,15 @@ inventário e colocação manual para manter o escopo controlado.
 
 ### Autoria, microvoxels e schematics
 
-- A oficina de criação usa coordenadas inteiras em quartos de voxel; não usa float para
+- A oficina de criação usa coordenadas inteiras em oitavos de voxel; não usa float para
   definir a posição de um microvoxel ou de um bloco-módulo.
-- `SchematicData` tem serialização canônica, versão e hash. O mesmo arquivo precisa gerar
+- `StructureTemplate V4` tem serialização canônica, versão e hash. O mesmo arquivo precisa gerar
   o mesmo hash em todas as máquinas e todos os peers.
 - O catálogo de runtime vende e empilha `machine_block_id` como uma unidade. Cada
   bloco-módulo referencia o conjunto de microvoxels usado para desenhá-lo.
 - O renderizador pode mostrar o ghost com transparência e os microvoxels com suavização,
   mas o footprint, o manifesto, as portas e as regras de montagem são autoritativos na sim.
-- A schematic não executa código arbitrário. Seu comportamento aponta para um ID de
+- O asset não executa código arbitrário. Seu `utility_id` aponta para um ID de
   máquina/receita já registrado e validado no catálogo.
 
 ### Cooperação
@@ -359,8 +360,8 @@ mas seus limites e suas regiões não mudam durante a partida.
 - Mapa procedural infinito ou novos biomas carregados durante a partida.
 - Construção livre na cidade ou múltiplos distritos comerciais.
 - Veículos autônomos de entrega: a primeira automação usa terminal e rota fixa.
-- Construção microvoxel livre no mapa normal: microvoxels só existem na autoria e na
-  montagem das peças de uma schematic.
+- Edição unitária da grade `8×8×8` fora do Estúdio: no mapa normal o jogador coloca padrões,
+  Custom Blocks e peças exportadas como unidades de inventário.
 - Schematics com comportamento arbitrário ou scripts exportados pelo usuário: o catálogo
   aceita apenas comportamentos registrados e determinísticos.
 - Postes e fios com área de cobertura: a energia é global.

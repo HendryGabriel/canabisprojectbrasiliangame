@@ -5,6 +5,7 @@ const MAX_LIFETIME_SECONDS: float = 90.0
 
 var item_id: String = ""
 var count: int = 1
+var slot_data: Dictionary = {}
 var velocity: Vector3 = Vector3.ZERO
 var on_ground: bool = false
 var time_alive: float = 0.0
@@ -13,10 +14,12 @@ var main_game: Node = null
 # Visual child
 var visual: Node3D = null
 
-func configure(p_main: Node, p_item_id: String, p_count: int, p_pos: Vector3, p_vel: Vector3) -> void:
+func configure(p_main: Node, p_item_id: String, p_count: int, p_pos: Vector3, p_vel: Vector3, p_data: Dictionary = {}) -> void:
 	main_game = p_main
 	item_id = p_item_id
 	count = p_count
+	slot_data = {"item": p_item_id, "count": p_count}
+	if not p_data.is_empty(): slot_data["data"] = p_data.duplicate(true)
 	global_position = p_pos
 	velocity = p_vel
 	_create_visuals()
@@ -104,7 +107,7 @@ func _process(delta: float) -> void:
 			
 		if dist < 0.6:
 			# Collect item
-			var success = main_game._add_item(item_id, count)
+			var success = main_game._add_item_slot(slot_data)
 			if success:
 				main_game._message("Coletado: %s x%s" % [main_game._item_name(item_id), count])
 				main_game._update_all_ui()

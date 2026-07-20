@@ -7,6 +7,7 @@ extends RefCounted
 
 
 const VoxelWorldScript = preload("res://src/voxel_world.gd")
+const MicroCellScript = preload("res://src/micro_cell_data.gd")
 
 ## PackedStringArray constructors are runtime expressions in Godot 4, so this
 ## must remain a literal Array to be usable as a script constant.
@@ -25,6 +26,7 @@ static func build(snapshot: Dictionary, render_palette: Dictionary, voxel_ao_ena
 	for face_name in FACE_NAMES:
 		_build_greedy_opaque_face(snapshot, render_palette, face_name, voxel_ao_enabled, opaque_builders)
 		_build_greedy_collision_face(snapshot, render_palette, face_name, collision_faces)
+	_append_micro_cells(snapshot, render_palette, opaque_builders, cutout_builders, transparent_builders, collision_faces)
 
 	# Cutout foliage and plants require their original small quads.  Greedy merging
 	# them would change alpha sorting, wind, and crossed-plant silhouettes.
@@ -69,6 +71,163 @@ static func build(snapshot: Dictionary, render_palette: Dictionary, voxel_ao_ena
 		"micro_foliage": _builders_to_surfaces(micro_builders),
 		"collision_faces": collision_faces,
 	}
+
+
+static func _append_micro_cells(snapshot: Dictionary, render_palette: Dictionary, opaque_builders: Dictionary, cutout_builders: Dictionary, transparent_builders: Dictionary, collision_faces: PackedVector3Array) -> void:
+	var cells: Dictionary = {}
+	for raw_row in snapshot.get("micro_cells", []) as Array:
+		if typeof(raw_row) != TYPE_ARRAY or (raw_row as Array).size() < 4 or typeof((raw_row as Array)[3]) != TYPE_DICTIONARY:
+			continue
+		var row: Array = raw_row as Array
+		var cell = MicroCellScript.from_dictionary(row[3] as Dictionary)
+		if cell != null:
+			cells[Vector3i(int(row[0]), int(row[1]), int(row[2]))] = cell
+	if cells.is_empty():
+		return
+	var descriptor_by_name: Dictionary = {}
+	for raw_descriptor in render_palette.values():
+		var descriptor: Dictionary = raw_descriptor as Dictionary
+		descriptor_by_name[str(descriptor.get("block_id", ""))] = descriptor
+	var section_size: int = int(snapshot.get("size", VoxelWorldScript.SECTION_SIZE))
+	for raw_base_pos in cells.keys():
+		var base_pos: Vector3i = raw_base_pos
+		if base_pos.x < 0 or base_pos.x >= section_size or base_pos.y < 0 or base_pos.y >= section_size or base_pos.z < 0 or base_pos.z >= section_size:
+			continue
+		var cell = cells[base_pos]
+		_append_greedy_micro_cell(snapshot, render_palette, cells, descriptor_by_name, base_pos, cell, opaque_builders, cutout_builders, transparent_builders, collision_faces)
+
+
+static func _append_greedy_micro_cell(snapshot: Dictionary, render_palette: Dictionary, cells: Dictionary, descriptor_by_name: Dictionary, base_pos: Vector3i, cell, opaque_builders: Dictionary, cutout_builders: Dictionary, transparent_builders: Dictionary, collision_faces: PackedVector3Array) -> void:
+	var size: int = MicroCellScript.SIZE
+	for face_name in FACE_NAMES:
+		for slice in range(size):
+			var candidates: Array = []; candidates.resize(size * size)
+			for v in range(size):
+				for u in range(size):
+					var micro_pos: Vector3i = _face_position(face_name, slice, u, v)
+					var material_id: String = cell.get_material(micro_pos)
+					if material_id != "" and _micro_face_visible(snapshot, render_palette, cells, base_pos, micro_pos, face_name):
+						var piece_edge: int = cell.get_piece_edge(micro_pos)
+						var piece_origin: Vector3i = cell.get_piece_origin(micro_pos)
+						candidates[v * size + u] = {
+							"material": material_id,
+							"piece_edge": piece_edge,
+							"piece_origin": piece_origin,
+							"signature": "%s|%d|%d:%d:%d" % [material_id, piece_edge, piece_origin.x, piece_origin.y, piece_origin.z],
+						}
+			for v in range(size):
+				for u in range(size):
+					var index: int = v * size + u
+					if candidates[index] == null: continue
+					var candidate: Dictionary = candidates[index] as Dictionary
+					var material_id: String = str(candidate.get("material", ""))
+					var signature: String = str(candidate.get("signature", ""))
+					var width: int = 1; var height: int = 1
+					while u + width < size and _same_micro_piece(candidates[v * size + u + width], signature): width += 1
+					var can_extend: bool = true
+					while v + height < size and can_extend:
+						for test_u in range(width):
+							if not _same_micro_piece(candidates[(v + height) * size + u + test_u], signature): can_extend = false; break
+						if can_extend: height += 1
+					for clear_v in range(height):
+						for clear_u in range(width): candidates[(v + clear_v) * size + u + clear_u] = null
+					var descriptor: Dictionary = descriptor_by_name.get(material_id, {}) as Dictionary
+					if descriptor.is_empty(): continue
+					var target_builders: Dictionary = transparent_builders if bool(descriptor.get("transparent", false)) else (cutout_builders if bool(descriptor.get("foliage", false)) or bool(descriptor.get("plant", false)) else opaque_builders)
+					var corners: PackedVector3Array = _micro_rect_face_corners(base_pos, _face_position(face_name, slice, u, v), face_name, width, height)
+					var face_uvs: PackedVector2Array = _micro_piece_face_uvs(face_name, u, v, width, height, candidate.get("piece_origin", Vector3i.ZERO), int(candidate.get("piece_edge", 1)))
+					_append_micro_face(target_builders, descriptor, face_name, corners, face_uvs)
+					if bool(descriptor.get("solid", true)) and not bool(descriptor.get("plant", false)):
+						collision_faces.append_array(PackedVector3Array([corners[0], corners[1], corners[2], corners[0], corners[2], corners[3]]))
+
+
+static func _same_micro_piece(candidate: Variant, signature: String) -> bool:
+	return typeof(candidate) == TYPE_DICTIONARY and str((candidate as Dictionary).get("signature", "")) == signature
+
+
+static func _micro_piece_face_uvs(face_name: String, u: int, v: int, width: int, height: int, piece_origin: Vector3i, piece_edge: int) -> PackedVector2Array:
+	var piece_u: int = piece_origin.z if face_name in ["east", "west"] else piece_origin.x
+	var piece_v: int = piece_origin.z if face_name in ["top", "bottom"] else piece_origin.y
+	var u0: float = float(u - piece_u) / float(piece_edge)
+	var v0: float = float(v - piece_v) / float(piece_edge)
+	var u1: float = u0 + float(width) / float(piece_edge)
+	var v1: float = v0 + float(height) / float(piece_edge)
+	if face_name in ["top", "bottom"]:
+		return PackedVector2Array([Vector2(u0, v0), Vector2(u1, v0), Vector2(u1, v1), Vector2(u0, v1)])
+	return PackedVector2Array([Vector2(u0, v1), Vector2(u1, v1), Vector2(u1, v0), Vector2(u0, v0)])
+
+
+static func _micro_rect_face_corners(base_pos: Vector3i, micro_pos: Vector3i, face_name: String, width: int, height: int) -> PackedVector3Array:
+	var edge: float = 1.0 / float(MicroCellScript.SIZE)
+	var minimum: Vector3 = Vector3(base_pos) - Vector3.ONE * 0.5 + Vector3(micro_pos) * edge
+	var maximum: Vector3 = minimum + Vector3.ONE * edge
+	match face_name:
+		"north": maximum.x = minimum.x + width * edge; maximum.y = minimum.y + height * edge
+		"south": maximum.x = minimum.x + width * edge; maximum.y = minimum.y + height * edge
+		"east": maximum.z = minimum.z + width * edge; maximum.y = minimum.y + height * edge
+		"west": maximum.z = minimum.z + width * edge; maximum.y = minimum.y + height * edge
+		"top": maximum.x = minimum.x + width * edge; maximum.z = minimum.z + height * edge
+		"bottom": maximum.x = minimum.x + width * edge; maximum.z = minimum.z + height * edge
+	match face_name:
+		"north": return PackedVector3Array([Vector3(minimum.x, minimum.y, minimum.z), Vector3(maximum.x, minimum.y, minimum.z), Vector3(maximum.x, maximum.y, minimum.z), Vector3(minimum.x, maximum.y, minimum.z)])
+		"south": return PackedVector3Array([Vector3(maximum.x, minimum.y, maximum.z), Vector3(minimum.x, minimum.y, maximum.z), Vector3(minimum.x, maximum.y, maximum.z), Vector3(maximum.x, maximum.y, maximum.z)])
+		"east": return PackedVector3Array([Vector3(maximum.x, minimum.y, minimum.z), Vector3(maximum.x, minimum.y, maximum.z), Vector3(maximum.x, maximum.y, maximum.z), Vector3(maximum.x, maximum.y, minimum.z)])
+		"west": return PackedVector3Array([Vector3(minimum.x, minimum.y, maximum.z), Vector3(minimum.x, minimum.y, minimum.z), Vector3(minimum.x, maximum.y, minimum.z), Vector3(minimum.x, maximum.y, maximum.z)])
+		"top": return PackedVector3Array([Vector3(minimum.x, maximum.y, minimum.z), Vector3(maximum.x, maximum.y, minimum.z), Vector3(maximum.x, maximum.y, maximum.z), Vector3(minimum.x, maximum.y, maximum.z)])
+		"bottom": return PackedVector3Array([Vector3(minimum.x, minimum.y, maximum.z), Vector3(maximum.x, minimum.y, maximum.z), Vector3(maximum.x, minimum.y, minimum.z), Vector3(minimum.x, minimum.y, minimum.z)])
+	return PackedVector3Array()
+
+
+static func _micro_face_visible(snapshot: Dictionary, render_palette: Dictionary, cells: Dictionary, base_pos: Vector3i, micro_pos: Vector3i, face_name: String) -> bool:
+	var neighbor_micro: Vector3i = micro_pos + _face_offset(face_name)
+	var neighbor_base: Vector3i = base_pos
+	if neighbor_micro.x < 0: neighbor_base.x -= 1; neighbor_micro.x = MicroCellScript.SIZE - 1
+	elif neighbor_micro.x >= MicroCellScript.SIZE: neighbor_base.x += 1; neighbor_micro.x = 0
+	if neighbor_micro.y < 0: neighbor_base.y -= 1; neighbor_micro.y = MicroCellScript.SIZE - 1
+	elif neighbor_micro.y >= MicroCellScript.SIZE: neighbor_base.y += 1; neighbor_micro.y = 0
+	if neighbor_micro.z < 0: neighbor_base.z -= 1; neighbor_micro.z = MicroCellScript.SIZE - 1
+	elif neighbor_micro.z >= MicroCellScript.SIZE: neighbor_base.z += 1; neighbor_micro.z = 0
+	if cells.has(neighbor_base) and cells[neighbor_base].get_material(neighbor_micro) != "":
+		return false
+	var neighbor_id: int = _id_at(snapshot, neighbor_base)
+	if neighbor_id == 0:
+		return true
+	var neighbor: Dictionary = render_palette.get(neighbor_id, {}) as Dictionary
+	return not bool(neighbor.get("solid", false)) or bool(neighbor.get("transparent", false))
+
+
+static func _micro_face_corners(base_pos: Vector3i, micro_pos: Vector3i, face_name: String) -> PackedVector3Array:
+	var edge: float = 1.0 / float(MicroCellScript.SIZE)
+	var minimum: Vector3 = Vector3(base_pos) - Vector3.ONE * 0.5 + Vector3(micro_pos) * edge
+	var maximum: Vector3 = minimum + Vector3.ONE * edge
+	match face_name:
+		"north": return PackedVector3Array([Vector3(minimum.x, minimum.y, minimum.z), Vector3(maximum.x, minimum.y, minimum.z), Vector3(maximum.x, maximum.y, minimum.z), Vector3(minimum.x, maximum.y, minimum.z)])
+		"south": return PackedVector3Array([Vector3(maximum.x, minimum.y, maximum.z), Vector3(minimum.x, minimum.y, maximum.z), Vector3(minimum.x, maximum.y, maximum.z), Vector3(maximum.x, maximum.y, maximum.z)])
+		"east": return PackedVector3Array([Vector3(maximum.x, minimum.y, minimum.z), Vector3(maximum.x, minimum.y, maximum.z), Vector3(maximum.x, maximum.y, maximum.z), Vector3(maximum.x, maximum.y, minimum.z)])
+		"west": return PackedVector3Array([Vector3(minimum.x, minimum.y, maximum.z), Vector3(minimum.x, minimum.y, minimum.z), Vector3(minimum.x, maximum.y, minimum.z), Vector3(minimum.x, maximum.y, maximum.z)])
+		"top": return PackedVector3Array([Vector3(minimum.x, maximum.y, minimum.z), Vector3(maximum.x, maximum.y, minimum.z), Vector3(maximum.x, maximum.y, maximum.z), Vector3(minimum.x, maximum.y, maximum.z)])
+		"bottom": return PackedVector3Array([Vector3(minimum.x, minimum.y, maximum.z), Vector3(maximum.x, minimum.y, maximum.z), Vector3(maximum.x, minimum.y, minimum.z), Vector3(minimum.x, minimum.y, minimum.z)])
+	return PackedVector3Array()
+
+
+static func _append_micro_face(builders: Dictionary, descriptor: Dictionary, face_name: String, corners: PackedVector3Array, face_uvs: PackedVector2Array) -> void:
+	var builder: Dictionary = _get_builder(builders, descriptor, face_name)
+	var vertices: PackedVector3Array = builder["vertices"] as PackedVector3Array
+	var normals: PackedVector3Array = builder["normals"] as PackedVector3Array
+	var uvs: PackedVector2Array = builder["uvs"] as PackedVector2Array
+	var uv2: PackedVector2Array = builder["uv2"] as PackedVector2Array
+	var colors: PackedColorArray = builder["colors"] as PackedColorArray
+	var indices: PackedInt32Array = builder["indices"] as PackedInt32Array
+	var first: int = vertices.size()
+	for index in range(4):
+		vertices.append(corners[index])
+		normals.append(Vector3(_face_offset(face_name)))
+		uvs.append(face_uvs[index])
+		uv2.append(Vector2(float(_texture_layer_for_face(descriptor, face_name)), 0.0))
+		colors.append(Color(1.0, 1.0, 1.0, float(descriptor.get("alpha", 1.0))))
+	indices.append_array(PackedInt32Array([first, first + 1, first + 2, first, first + 2, first + 3]))
+	builder["vertices"] = vertices; builder["normals"] = normals; builder["uvs"] = uvs
+	builder["uv2"] = uv2; builder["colors"] = colors; builder["indices"] = indices
 
 
 static func _build_greedy_opaque_face(snapshot: Dictionary, render_palette: Dictionary, face_name: String, voxel_ao_enabled: bool, builders: Dictionary) -> void:
@@ -461,7 +620,8 @@ static func _face_is_visible(snapshot: Dictionary, render_palette: Dictionary, p
 	var descriptor: Dictionary = render_palette.get(palette_id, {})
 	if face_name == "bottom" and str(descriptor.get("block_id", "")) == "bedrock":
 		return false
-	var neighbor_id: int = _id_at(snapshot, pos + _face_offset(face_name))
+	var neighbor_pos: Vector3i = pos + _face_offset(face_name)
+	var neighbor_id: int = _id_at(snapshot, neighbor_pos)
 	var neighbor: Dictionary = render_palette.get(neighbor_id, {})
 	if bool(descriptor.get("foliage", false)) and bool(neighbor.get("foliage", false)):
 		return false
@@ -536,7 +696,7 @@ static func _id_at(snapshot: Dictionary, pos: Vector3i) -> int:
 	var z: int = pos.z + 1
 	if x < 0 or x >= padded_size or y < 0 or y >= padded_size or z < 0 or z >= padded_size:
 		return 0
-	var voxels: PackedInt32Array = snapshot["voxels"] as PackedInt32Array
+	var voxels: Variant = snapshot["voxels"]
 	return int(voxels[(y * padded_size + z) * padded_size + x])
 
 

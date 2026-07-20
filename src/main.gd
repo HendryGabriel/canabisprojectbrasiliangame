@@ -13,11 +13,13 @@ const VoxelDebrisSystemScript = preload("res://src/voxel_debris_system.gd")
 const EntityManagerScript = preload("res://src/entity_manager.gd")
 const LightRegistryScript = preload("res://src/light_registry.gd")
 const ThumbstoneScript = preload("res://src/thumbstone.gd")
+const MicroCellScript = preload("res://src/micro_cell_data.gd")
+const PlacedAssetSystemScript = preload("res://src/placed_asset_system.gd")
+const StructureWorkspaceScript = preload("res://src/structure_workspace.gd")
+const VoxelSectionMesherScript = preload("res://src/voxel_section_mesher.gd")
 const SchematicImporterScript = preload("res://src/schematic_importer.gd")
 const SceneryDataScript = preload("res://src/scenery_data.gd")
-const BlueprintDataScript = preload("res://src/blueprint_data.gd")
 const SCENERY_DIR: String = "res://data/scenery/"
-const BLUEPRINT_DIR: String = "res://data/blueprints/"
 
 const BIOME_SIZE: int = 100
 const SURFACE_BASE_Y: int = 0
@@ -37,10 +39,8 @@ const MANA_MAX: float = 100.0
 const MANA_REGEN_PER_SECOND: float = 5.0
 const MANITA_PICKAXE_MANA_COST: float = 5.0
 const HOTBAR_SLOT_COUNT: int = 9
-const SAVE_PATH: String = "user://savegame_v4.json"
-const V3_SAVE_PATH: String = "user://savegame_v3.json"
-const V2_SAVE_PATH: String = "user://savegame_v2.json"
-const LEGACY_SAVE_PATH: String = "user://savegame.json"
+const SAVE_PATH: String = "user://weedcraft_save_v5.json"
+const OLD_SAVE_PATHS: Array[String] = ["user://savegame_v4.json", "user://savegame_v3.json", "user://savegame_v2.json", "user://savegame.json"]
 const SETTINGS_PATH: String = "user://settings.cfg"
 const DEFAULT_TERRAIN_TILE_PATH: String = "res://data/terrain/biome_1.tterrain.json"
 const DEFAULT_STRUCTURE_REGISTRY_PATH: String = "res://data/structures/registry.json"
@@ -123,6 +123,10 @@ var voxel_texture_array = null
 var voxel_debris = null
 var active_terrain_tile = null
 var active_structure_registry = null
+var placed_assets = null
+var placement_rotation: int = 0
+var asset_ghost_root: Node3D = null
+var asset_ghost_signature: String = ""
 var active_terrain_hash: String = ""
 var active_registry_hash: String = ""
 var last_generation_report = null
@@ -179,14 +183,6 @@ var builder_type_flat: bool = false
 var publicar_button: Button
 var _mapa_oficial_cache: Dictionary = {}
 var _mapa_oficial_lido: bool = false
-# blueprints multibloco (estilo Satisfactory)
-var blueprint_menu: PanelContainer
-var blueprint_mode: bool = false
-var active_blueprint = null
-var bp_rot: int = 0
-var bp_ghost: MeshInstance3D = null
-var construction_sites: Array = []   # [{bp, base, rot, next_layer, ghost}]
-
 var player: TrumanPlayer
 var world_root: Node3D
 var ui_layer: CanvasLayer
@@ -231,8 +227,13 @@ func _ready() -> void:
 
 	block_defs = BlockCatalog.blocks()
 	item_defs = BlockCatalog.items()
+	item_defs["micro_pattern"] = {"name": "Padrao de Microvoxels", "description": "Uma celula 8x8x8 preservada; coloque para reconstruir a formacao."}
 	recipes = BlockCatalog.recipes()
 	voxel_world = VoxelWorldScript.new(block_defs)
+	active_structure_registry = StructureRegistryScript.load_from_file(DEFAULT_STRUCTURE_REGISTRY_PATH)
+	if active_structure_registry == null: active_structure_registry = StructureRegistryScript.empty_registry()
+	placed_assets = PlacedAssetSystemScript.new(); placed_assets.configure(voxel_world, active_structure_registry)
+	item_defs.merge(placed_assets.item_definitions(), true)
 	performance_profile = PerformanceProfileScript.new()
 	inventory_slots = _make_slots(INVENTORY_SLOT_COUNT)
 	craft_slots = _make_slots(4)
@@ -284,7 +285,7 @@ func _process(delta: float) -> void:
 	if player != null and is_instance_valid(player) and player.is_inside_tree():
 		# Handle held left-click block breaking & held right-click block placing
 		if game_started and not _is_menu_open() and not inventory_panel.visible and not chest_panel.visible and not (creative_panel != null and creative_panel.visible):
-			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not left_click_consumed and not schematic_mode and not blueprint_mode and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
+			if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not left_click_consumed and not schematic_mode and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 				_handle_block_breaking(delta)
 			else:
 				_cancel_block_breaking()
@@ -297,7 +298,7 @@ func _process(delta: float) -> void:
 			_cancel_block_breaking()
 		_update_target_outline()
 		_update_schematic_preview()
-		_update_blueprint_preview()
+		_update_asset_ghost()
 	_update_cursor_stack_label()
 	_update_hover_tooltip_position()
 	_update_status()
@@ -333,11 +334,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			elif pause_menu_panel != null and pause_menu_panel.visible:
 				_resume_game()
-			elif blueprint_mode:
-				_cancelar_blueprint()
-			elif blueprint_menu != null and blueprint_menu.visible:
-				blueprint_menu.visible = false
-				_set_ui_mode(false)
 			elif schematic_mode:
 				_cancelar_schematic()
 			elif inventory_panel.visible or chest_panel.visible or (creative_panel != null and creative_panel.visible):
@@ -360,20 +356,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_F4:
 			_toggle_creative_mode()
 			return
-		if event.keycode == KEY_F3:
-			_toggle_blueprint_menu()
-			return
-		if event.keycode == KEY_G:
-			_entregar_material_para_obra()
-			return
 		if Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 			if event.keycode == KEY_R:
 				if schematic_mode:
 					schematic_rot = (schematic_rot + 1) % 4
 					_message("Schematic girado para %d graus." % (schematic_rot * 90))
-				elif blueprint_mode:
-					bp_rot = (bp_rot + 1) % 4
-					_message("Projeto girado para %d graus." % (bp_rot * 90))
+				elif _selected_placeable_asset() != null:
+					placement_rotation = posmod(placement_rotation + 1, 4)
+					asset_ghost_signature = ""
+					_message("Rotacao do asset: %d graus." % (placement_rotation * 90))
 				else:
 					_marcar_canto_selecao()
 				return
@@ -382,9 +373,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			if event.keycode == KEY_X:
 				_limpar_selecao(true)
-				return
-			if event.keycode == KEY_B:
-				_salvar_selecao_como_blueprint()
 				return
 		if event.keycode == KEY_Q:
 			_drop_selected_item()
@@ -419,11 +407,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if blueprint_mode:
-				_posicionar_obra()
-				left_click_consumed = true
-				get_viewport().set_input_as_handled()
-				return
 			if schematic_mode:
 				_estampar_schematic()
 				left_click_consumed = true
@@ -800,6 +783,16 @@ func _item_icon_faces(item_id: String) -> Dictionary:
 	item_icon_faces[item_id] = faces
 	return faces
 
+
+func _item_mesh(item_id: String, data: Dictionary = {}) -> Mesh:
+	if placed_assets == null or item_id == "": return null
+	if item_id == "micro_pattern":
+		var cell = MicroCellScript.from_dictionary(data.get("cell", {}) as Dictionary, block_defs)
+		return _micro_cell_mesh(cell) if cell != null else null
+	var item_data: Dictionary = item_defs.get(item_id, {}) as Dictionary
+	var template = placed_assets.asset_for_item(str(item_data.get("place_asset", "")))
+	return _asset_preview_mesh(template) if template != null else null
+
 func _create_lighting() -> void:
 	# --- Sun ---
 	sun_light = DirectionalLight3D.new()
@@ -1023,10 +1016,14 @@ func _generate_biome_one_data() -> void:
 	active_structure_registry = StructureRegistryScript.load_from_file(DEFAULT_STRUCTURE_REGISTRY_PATH)
 	if active_structure_registry == null:
 		active_structure_registry = StructureRegistryScript.empty_registry()
+	placed_assets.configure(voxel_world, active_structure_registry)
+	item_defs.merge(placed_assets.item_definitions(), true)
 	active_terrain_hash = active_terrain_tile.content_hash()
 	active_registry_hash = active_structure_registry.content_hash()
 	var generator = TerrainGeneratorScript.new()
 	last_generation_report = generator.generate_into(voxel_world, active_terrain_tile, active_structure_registry, WORLD_SEED)
+	if placed_assets != null and not placed_assets.load_save_data(last_generation_report.placed_assets):
+		last_generation_report.add_warning("Instancias de assets geradas nao puderam ser registradas.")
 	if not last_generation_report.is_ok():
 		push_error(last_generation_report.summary())
 	_construir_cidade(altura_cidade)
@@ -1034,6 +1031,10 @@ func _generate_biome_one_data() -> void:
 	for z in range(TerrainTileDataScript.TILE_SIZE):
 		for x in range(TerrainTileDataScript.TILE_SIZE):
 			surface_heights[Vector2i(x, z)] = active_terrain_tile.get_height(x, z)
+
+
+func register_multiblock_utility(utility_id: String, handler: Object) -> void:
+	if placed_assets != null: placed_assets.register_utility(utility_id, handler)
 
 
 # ---------------- terreno natural + cidade fixa ----------------
@@ -1190,11 +1191,16 @@ func _generate_superflat_data() -> void:
 	tile.cave_density.fill(0)   # sem cavernas
 	tile.zone_flags.fill(0)     # sem florestas/decoracao/estruturas
 	active_terrain_tile = tile
-	active_structure_registry = StructureRegistryScript.empty_registry()
+	active_structure_registry = StructureRegistryScript.load_from_file(DEFAULT_STRUCTURE_REGISTRY_PATH)
+	if active_structure_registry == null: active_structure_registry = StructureRegistryScript.empty_registry()
+	placed_assets.configure(voxel_world, active_structure_registry)
+	item_defs.merge(placed_assets.item_definitions(), true)
 	active_terrain_hash = active_terrain_tile.content_hash()
 	active_registry_hash = active_structure_registry.content_hash()
 	var generator = TerrainGeneratorScript.new()
 	last_generation_report = generator.generate_into(voxel_world, active_terrain_tile, active_structure_registry, WORLD_SEED)
+	if placed_assets != null and not placed_assets.load_save_data(last_generation_report.placed_assets):
+		last_generation_report.add_warning("Instancias de assets geradas nao puderam ser registradas.")
 	if not last_generation_report.is_ok():
 		push_error(last_generation_report.summary())
 	for z in range(TerrainTileDataScript.TILE_SIZE):
@@ -1254,8 +1260,7 @@ func _peek_save_meta() -> void:
 	flat_size = 100
 	flat_surface_y = 0
 	creative_mode = false
-	var caminho: String = SAVE_PATH if FileAccess.file_exists(SAVE_PATH) else V3_SAVE_PATH
-	var arquivo: FileAccess = FileAccess.open(caminho, FileAccess.READ)
+	var arquivo: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.READ)
 	if arquivo == null:
 		return
 	var json: JSON = JSON.new()
@@ -1818,259 +1823,6 @@ func _preencher_selecao() -> void:
 	else:
 		_message("Área preenchida com %s: %d blocos." % [_item_name(selected_item), alterados])
 	_limpar_selecao(false)
-
-
-# ---------------- blueprints multibloco (estilo Satisfactory) ----------------
-
-func _salvar_selecao_como_blueprint() -> void:
-	# DEV: captura a area selecionada (2 cantos) como molde de maquina
-	if sel_count < 2:
-		_message("Marque a área da máquina com R (2 cantos) antes de salvar o projeto (B).")
-		return
-	var minimo: Vector3i = Vector3i(mini(sel_a.x, sel_b.x), mini(sel_a.y, sel_b.y), mini(sel_a.z, sel_b.z))
-	var maximo: Vector3i = Vector3i(maxi(sel_a.x, sel_b.x), maxi(sel_a.y, sel_b.y), maxi(sel_a.z, sel_b.z))
-	DirAccess.make_dir_recursive_absolute(BLUEPRINT_DIR)
-	var n: int = 1
-	while FileAccess.file_exists(BLUEPRINT_DIR + "maquina_%d.json" % n):
-		n += 1
-	var nome: String = "Maquina %d" % n
-	var bp = BlueprintDataScript.capturar(voxel_world, minimo, maximo, nome)
-	if bp.blocks.is_empty():
-		_message("A área selecionada está vazia — construa a máquina primeiro.")
-		return
-	if bp.save_to_file(BLUEPRINT_DIR + "maquina_%d.json" % n):
-		_message("Projeto salvo: %s (%d blocos). Jogadores acham em F3." % [nome, bp.blocks.size()])
-		_limpar_selecao(false)
-
-
-func _toggle_blueprint_menu() -> void:
-	if blueprint_menu == null:
-		_create_blueprint_menu()
-	if blueprint_menu.visible:
-		blueprint_menu.visible = false
-		_set_ui_mode(false)
-	else:
-		_preencher_blueprint_menu()
-		blueprint_menu.visible = true
-		_set_ui_mode(true)
-
-
-func _create_blueprint_menu() -> void:
-	blueprint_menu = PanelContainer.new()
-	blueprint_menu.visible = false
-	blueprint_menu.position = Vector2(360, 90)
-	blueprint_menu.custom_minimum_size = Vector2(560, 420)
-	_apply_square_panel_style(blueprint_menu)
-	ui_layer.add_child(blueprint_menu)
-
-
-func _preencher_blueprint_menu() -> void:
-	_clear_children(blueprint_menu)
-	var root: VBoxContainer = VBoxContainer.new()
-	root.add_theme_constant_override("separation", 8)
-	blueprint_menu.add_child(root)
-	var titulo: Label = Label.new()
-	titulo.text = "Projetos de Máquina"
-	titulo.add_theme_font_size_override("font_size", 20)
-	root.add_child(titulo)
-	var dica: Label = Label.new()
-	dica.text = "Escolha um projeto, posicione o holograma (clique), gire com R, e entregue os materiais camada por camada com G."
-	dica.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(dica)
-	var scroll: ScrollContainer = ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(540, 320)
-	root.add_child(scroll)
-	var lista: VBoxContainer = VBoxContainer.new()
-	scroll.add_child(lista)
-	var dir: DirAccess = DirAccess.open(BLUEPRINT_DIR)
-	var achou: bool = false
-	if dir != null:
-		for arquivo in dir.get_files():
-			if not arquivo.ends_with(".json"):
-				continue
-			var bp = BlueprintDataScript.load_from_file(BLUEPRINT_DIR + arquivo)
-			if bp == null:
-				continue
-			achou = true
-			var custo: Dictionary = bp.custo()
-			var texto_custo: PackedStringArray = PackedStringArray()
-			for id_bloco in custo:
-				texto_custo.append("%dx %s" % [custo[id_bloco], _item_name(str((block_defs.get(id_bloco, {}) as Dictionary).get("drop", id_bloco)))])
-			var botao: Button = _make_menu_button("%s  (%dx%dx%d)  —  %s" % [bp.display_name, bp.size.x, bp.size.y, bp.size.z, ", ".join(texto_custo)], func() -> void:
-				_iniciar_blueprint(bp))
-			lista.add_child(botao)
-	if not achou:
-		var vazio: Label = Label.new()
-		vazio.text = "Nenhum projeto ainda. Um dev cria assim: modo criativo (F4), constrói a máquina, seleciona a área com R (2 cantos) e salva com B."
-		vazio.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		lista.add_child(vazio)
-	root.add_child(_make_menu_button("Fechar (F3)", _toggle_blueprint_menu))
-
-
-func _iniciar_blueprint(bp) -> void:
-	active_blueprint = bp
-	bp_rot = 0
-	blueprint_mode = true
-	blueprint_menu.visible = false
-	_set_ui_mode(false)
-	_message("Posicione o holograma de %s: clique coloca a obra, R gira, ESC cancela." % bp.display_name)
-
-
-func _cancelar_blueprint() -> void:
-	blueprint_mode = false
-	active_blueprint = null
-	if bp_ghost != null and is_instance_valid(bp_ghost):
-		bp_ghost.queue_free()
-	bp_ghost = null
-	_message("Colocação de projeto cancelada.")
-
-
-func _blueprint_base() -> Vector3i:
-	var hit = _get_target_block()
-	if hit == null or not hit.is_valid() or active_blueprint == null:
-		return Vector3i(-9999, -9999, -9999)
-	var s: Vector3i = active_blueprint.size_rotacionado(bp_rot)
-	return hit.pos + Vector3i(-int(s.x / 2.0), 1, -int(s.z / 2.0))
-
-
-func _update_blueprint_preview() -> void:
-	if not blueprint_mode or active_blueprint == null:
-		if bp_ghost != null and is_instance_valid(bp_ghost):
-			bp_ghost.visible = false
-		return
-	var base: Vector3i = _blueprint_base()
-	if base.y < -9000:
-		if bp_ghost != null and is_instance_valid(bp_ghost):
-			bp_ghost.visible = false
-		return
-	if bp_ghost == null or not is_instance_valid(bp_ghost):
-		bp_ghost = MeshInstance3D.new()
-		bp_ghost.mesh = BoxMesh.new()
-		var mat: StandardMaterial3D = StandardMaterial3D.new()
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.albedo_color = Color(0.3, 0.7, 1.0, 0.22)
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		bp_ghost.material_override = mat
-		world_root.add_child(bp_ghost)
-	var s: Vector3i = active_blueprint.size_rotacionado(bp_rot)
-	bp_ghost.visible = true
-	bp_ghost.scale = Vector3(s)
-	bp_ghost.position = Vector3(base) + Vector3(s) * 0.5 - Vector3(0.5, 0.5, 0.5)
-
-
-func _posicionar_obra() -> void:
-	var base: Vector3i = _blueprint_base()
-	if base.y < -9000:
-		_message("Mire num bloco pra assentar a obra.")
-		return
-	var s: Vector3i = active_blueprint.size_rotacionado(bp_rot)
-	# cria o canteiro de obras (holograma fantasma que enche conforme entrega material)
-	var ghost: MeshInstance3D = MeshInstance3D.new()
-	ghost.mesh = BoxMesh.new()
-	var mat: StandardMaterial3D = StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(0.9, 0.75, 0.2, 0.16)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	ghost.material_override = mat
-	ghost.scale = Vector3(s)
-	ghost.position = Vector3(base) + Vector3(s) * 0.5 - Vector3(0.5, 0.5, 0.5)
-	world_root.add_child(ghost)
-	construction_sites.append({"bp": active_blueprint, "base": base, "rot": bp_rot, "next_layer": 0, "ghost": ghost})
-	blueprint_mode = false
-	if bp_ghost != null and is_instance_valid(bp_ghost):
-		bp_ghost.queue_free()
-	bp_ghost = null
-	_message("Canteiro de obras criado. Aproxime, segure o material e aperte G pra entregar cada camada.")
-
-
-func _entregar_material_para_obra() -> void:
-	# entrega a proxima camada da obra mais proxima (dentro de 8 blocos)
-	if construction_sites.is_empty() or player == null:
-		return
-	var alvo: Dictionary = {}
-	var melhor: float = 8.0
-	for site in construction_sites:
-		var s: Vector3i = site["bp"].size_rotacionado(site["rot"])
-		var centro: Vector3 = Vector3(site["base"]) + Vector3(s) * 0.5
-		var d: float = player.global_position.distance_to(centro)
-		if d < melhor:
-			melhor = d
-			alvo = site
-	if alvo.is_empty():
-		_message("Chegue mais perto de um canteiro de obras (G).")
-		return
-	var bp = alvo["bp"]
-	var camada: int = alvo["next_layer"]
-	var custo: Dictionary = bp.custo_camada(camada)
-	if custo.is_empty():
-		# camada vazia, avanca de graca
-		alvo["next_layer"] = camada + 1
-		_pos_entrega(alvo)
-		return
-	# no criativo, entrega de graca; senao precisa dos itens no inventario
-	if not creative_mode:
-		for id_bloco in custo:
-			var item_id: String = _item_para_bloco(id_bloco)
-			if _item_total(item_id) < int(custo[id_bloco]):
-				_message("Faltam materiais para a camada %d: %dx %s." % [camada + 1, custo[id_bloco], _item_name(item_id)])
-				return
-		for id_bloco in custo:
-			_consumir_item(_item_para_bloco(id_bloco), int(custo[id_bloco]))
-	# coloca os blocos da camada
-	var minimo: Vector3i = Vector3i(999999, 999999, 999999)
-	var maximo: Vector3i = Vector3i(-999999, -999999, -999999)
-	for b in bp.blocos_camada_mundo(camada, alvo["base"], alvo["rot"]):
-		if voxel_world.set_block(b["pos"], b["id"]):
-			minimo = minimo.min(b["pos"])
-			maximo = maximo.max(b["pos"])
-	if maximo.x >= minimo.x:
-		_queue_sections_aabb(minimo, maximo)
-	alvo["next_layer"] = camada + 1
-	_pos_entrega(alvo)
-
-
-func _pos_entrega(site: Dictionary) -> void:
-	var bp = site["bp"]
-	if site["next_layer"] >= bp.size.y:
-		# obra concluida
-		if is_instance_valid(site["ghost"]):
-			site["ghost"].queue_free()
-		construction_sites.erase(site)
-		var pts: int = bp.functional.size()
-		_message("Máquina %s construída!%s" % [bp.display_name, (" %d pontos funcionais ativos." % pts) if pts > 0 else ""])
-	else:
-		# sobe o holograma pra mostrar o progresso
-		var s: Vector3i = bp.size_rotacionado(site["rot"])
-		var restante: int = bp.size.y - site["next_layer"]
-		var g: MeshInstance3D = site["ghost"]
-		g.scale = Vector3(s.x, restante, s.z)
-		g.position = Vector3(site["base"]) + Vector3(s.x, 0, s.z) * 0.5 + Vector3(0, site["next_layer"] + restante * 0.5, 0) - Vector3(0.5, 0.5, 0.5)
-		_message("Camada %d/%d entregue. Continue com G." % [site["next_layer"], bp.size.y])
-
-
-func _item_para_bloco(block_id: String) -> String:
-	var drop: String = str((block_defs.get(block_id, {}) as Dictionary).get("drop", ""))
-	if drop != "" and item_defs.has(drop):
-		return drop
-	# procura um item que coloca esse bloco
-	for item_id in item_defs:
-		if str((item_defs[item_id] as Dictionary).get("place_block", "")) == block_id:
-			return item_id
-	return block_id
-
-
-func _consumir_item(item_id: String, quantidade: int) -> void:
-	var restante: int = quantidade
-	for i in range(inventory_slots.size()):
-		if restante <= 0:
-			break
-		if _slot_item(inventory_slots[i]) == item_id:
-			var tira: int = mini(restante, _slot_count(inventory_slots[i]))
-			_remove_from_slot(inventory_slots, i, tira)
-			restante -= tira
-	_update_all_ui()
 
 
 func _queue_sections_aabb(minimo: Vector3i, maximo: Vector3i) -> void:
@@ -2649,10 +2401,10 @@ func _show_main_menu() -> void:
 	if main_menu_panel != null:
 		main_menu_panel.visible = true
 	if continue_button != null:
-		continue_button.disabled = not FileAccess.file_exists(SAVE_PATH) and not FileAccess.file_exists(V3_SAVE_PATH)
+		continue_button.disabled = not FileAccess.file_exists(SAVE_PATH)
 	if menu_status_label != null:
-		var has_old_save: bool = FileAccess.file_exists(V2_SAVE_PATH) or FileAccess.file_exists(LEGACY_SAVE_PATH)
-		menu_status_label.text = "Save V2/antigo preservado: a nova geracao usa mundos V4." if not FileAccess.file_exists(SAVE_PATH) and not FileAccess.file_exists(V3_SAVE_PATH) and has_old_save else ""
+		var has_old_save: bool = OLD_SAVE_PATHS.any(func(path: String) -> bool: return FileAccess.file_exists(path))
+		menu_status_label.text = "Saves antigos nao sao carregados pelo novo sistema V5." if not FileAccess.file_exists(SAVE_PATH) and has_old_save else ""
 	_set_game_hud_visible(false)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	if player != null:
@@ -2689,7 +2441,7 @@ func _open_structure_studio() -> void:
 	get_tree().change_scene_to_file("res://scenes/structure_studio.tscn")
 
 func _continue_game() -> void:
-	if not FileAccess.file_exists(SAVE_PATH) and not FileAccess.file_exists(V3_SAVE_PATH):
+	if not FileAccess.file_exists(SAVE_PATH):
 		if menu_status_label != null:
 			menu_status_label.text = "Nenhum save encontrado."
 		return
@@ -3260,6 +3012,7 @@ func _set_block(pos: Vector3i, block_id: String):
 		if light_registry != null:
 			light_registry.register_torch(pos, false)
 	_queue_voxel_sections_for_edit(pos)
+	if placed_assets != null: placed_assets.notify_world_changed(pos)
 	return EditResultScript.accepted(pos, block_id)
 
 func _set_block_data(pos: Vector3i, block_id: String) -> void:
@@ -3478,6 +3231,26 @@ func _block_mesh(block_id: String) -> Mesh:
 func _remove_block(pos: Vector3i):
 	if voxel_world == null:
 		return EditResultScript.rejected("world_unavailable", pos)
+	if placed_assets != null:
+		var asset_removal: Dictionary = placed_assets.remove_owned_at(pos)
+		if bool(asset_removal.get("ok", false)):
+			var asset_id: String = str(asset_removal.get("asset_id", ""))
+			var removed_positions: Array = asset_removal.get("removed", []) as Array
+			for raw_removed_pos in removed_positions:
+				var removed_pos: Vector3i = raw_removed_pos
+				_queue_voxel_sections_for_edit(removed_pos); placed_assets.notify_world_changed(removed_pos)
+			var asset_result = EditResultScript.accepted(pos, asset_id)
+			asset_result.removed_blocks = [{"pos": asset_removal.get("root", pos), "block_id": asset_id, "slot": {"item": asset_id, "count": 1}}]
+			return asset_result
+	var micro_cell = voxel_world.get_micro_cell(pos)
+	if micro_cell != null:
+		var pattern_data: Dictionary = {"cell": micro_cell.to_dictionary(), "hash": micro_cell.content_hash()}
+		if not voxel_world.remove_block(pos): return EditResultScript.rejected("locked_or_unbreakable", pos, "micro_pattern")
+		_queue_voxel_sections_for_edit(pos)
+		var micro_result = EditResultScript.accepted(pos, "micro_pattern")
+		micro_result.removed_blocks = [{"pos": pos, "block_id": "micro_pattern", "slot": {"item": "micro_pattern", "count": 1, "data": pattern_data}}]
+		micro_result.affected_sections = voxel_world.get_affected_sections(pos)
+		return micro_result
 	var block_id: String = voxel_world.get_block_id(pos)
 	if block_id == "":
 		return EditResultScript.rejected("already_air", pos)
@@ -3493,6 +3266,7 @@ func _remove_block(pos: Vector3i):
 		if removed_id == "torch" and light_registry != null:
 			light_registry.unregister_torch(removal_pos)
 		removed.append({"pos": removal_pos, "block_id": removed_id})
+		if placed_assets != null: placed_assets.notify_world_changed(removal_pos)
 		for section in voxel_world.get_affected_sections(removal_pos): affected[section] = true
 	if removed.is_empty():
 		return EditResultScript.rejected("locked_or_unbreakable", pos, block_id)
@@ -3516,7 +3290,7 @@ func _handle_block_breaking(delta: float) -> void:
 		_cancel_block_breaking()
 		return
 	var pos: Vector3i = hit.pos
-	var block_id: String = voxel_world.get_block_id(pos) if voxel_world != null else ""
+	var block_id: String = hit.block_id
 	if block_id == "":
 		_cancel_block_breaking()
 		return
@@ -3591,6 +3365,14 @@ func _complete_block_breaking(pos: Vector3i, normal: Vector3i, block_id: String,
 		var removed: Dictionary = raw_removed as Dictionary
 		var removed_pos: Vector3i = removed.get("pos", pos)
 		var removed_id: String = str(removed.get("block_id", ""))
+		if typeof(removed.get("slot", null)) == TYPE_DICTIONARY:
+			var custom_slot: Dictionary = removed.get("slot", {}) as Dictionary
+			if not creative_mode:
+				var custom_spawn_pos: Vector3 = Vector3(removed_pos) + Vector3(0.0, 0.25, 0.0)
+				var custom_spawn_vel: Vector3 = Vector3(randf_range(-1.0, 1.0), 2.5, randf_range(-1.0, 1.0))
+				_spawn_dropped_item(_slot_item(custom_slot), _slot_count(custom_slot), custom_spawn_pos, custom_spawn_vel, custom_slot.get("data", {}) as Dictionary)
+				spawned_any_drop = true
+			continue
 		var removed_data: Dictionary = block_defs.get(removed_id, {}) as Dictionary
 		var drop_id: String = str(removed_data.get("drop", ""))
 		if removed_id == "chest": _erase_chest_inventory(removed_pos)
@@ -3691,6 +3473,120 @@ func _create_target_outline(pos: Vector3i) -> void:
 func _clear_target_outline() -> void:
 	if target_outline != null and is_instance_valid(target_outline):
 		target_outline.visible = false
+
+
+func _update_asset_ghost() -> void:
+	var template = _selected_placeable_asset()
+	var existing_assembly: Dictionary = placed_assets.nearest_missing_assembly(player.global_position) if template == null and placed_assets != null and player != null else {}
+	var hit = _get_target_block()
+	if (template == null and existing_assembly.is_empty()) or world_root == null or _is_menu_open():
+		_clear_asset_ghost(); return
+	if existing_assembly.is_empty() and hit == null:
+		_clear_asset_ghost(); return
+	var target: Vector3i = hit.pos + hit.normal if hit != null else Vector3i.ZERO
+	var cells: Array = []
+	var valid: bool = false
+	if not existing_assembly.is_empty():
+		template = active_structure_registry.get_asset(str(existing_assembly.get("asset_id", "")))
+		cells = _assembly_ghost_cells(template, existing_assembly.get("requirements", []) as Array)
+		valid = true
+		target = existing_assembly.get("origin", Vector3i.ZERO)
+	elif template.asset_kind == "multiblock" and template.placement_mode == "assembled":
+		var assembly_check: Dictionary = placed_assets.can_begin_assembly(template, target, placement_rotation)
+		valid = bool(assembly_check.get("ok", false)) and not _would_block_player(target)
+		cells = _assembly_ghost_cells(template, assembly_check.get("requirements", []) as Array)
+	else:
+		var placement_check: Dictionary = placed_assets.can_place(template, target, placement_rotation)
+		cells = placement_check.get("cells", []) as Array
+		valid = bool(placement_check.get("ok", false)) and not _asset_cells_overlap_player(cells)
+	var signature: String = "%s|%s|%d|%s|%s|%s" % [template.structure_id, target, placement_rotation, str(valid), _get_selected_hotbar_item(), str(existing_assembly.get("requirements", []))]
+	if signature == asset_ghost_signature: return
+	asset_ghost_signature = signature
+	_clear_asset_ghost(false)
+	asset_ghost_root = Node3D.new(); asset_ghost_root.name = "AssetPlacementGhost"; world_root.add_child(asset_ghost_root)
+	var ghost_material: StandardMaterial3D = StandardMaterial3D.new()
+	ghost_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ghost_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ghost_material.albedo_color = Color(0.2, 1.0, 0.35, 0.42) if valid else Color(1.0, 0.15, 0.12, 0.46)
+	ghost_material.no_depth_test = true
+	var muted_material: StandardMaterial3D = ghost_material.duplicate() as StandardMaterial3D
+	muted_material.albedo_color = Color(0.3, 0.75, 1.0, 0.22)
+	var selected_item: String = _get_selected_hotbar_item()
+	for raw_cell in cells:
+		var cell: Dictionary = raw_cell as Dictionary
+		if str(cell.get("kind", "")) == "air": continue
+		var mesh: Mesh = _micro_cell_mesh(cell.get("cell", null)) if str(cell.get("kind", "")) == "micro" else _block_mesh(str(cell.get("block_id", "")))
+		if mesh == null: continue
+		var highlighted: bool = str(cell.get("required_item", "")) in ["", selected_item]
+		var node: MeshInstance3D = MeshInstance3D.new(); node.mesh = mesh; node.position = Vector3(cell.get("pos", Vector3i.ZERO)); node.material_override = ghost_material if highlighted else muted_material
+		asset_ghost_root.add_child(node)
+
+
+func _assembly_ghost_cells(template, requirements: Array) -> Array:
+	var result: Array = []
+	for raw_requirement in requirements:
+		var requirement: Dictionary = raw_requirement as Dictionary
+		var pos: Vector3i = requirement.get("pos", Vector3i.ZERO)
+		var asset_id: String = str(requirement.get("asset_id", ""))
+		if asset_id != "":
+			var child = active_structure_registry.get_asset(asset_id) if active_structure_registry != null else null
+			if child != null:
+				for raw_child_cell in placed_assets.transformed_cells(child, pos, int(requirement.get("rotation", placement_rotation))):
+					var child_cell: Dictionary = (raw_child_cell as Dictionary).duplicate(); child_cell["required_item"] = str(requirement.get("item_id", "")); result.append(child_cell)
+		else:
+			result.append({"pos": pos, "kind": "block", "block_id": str(requirement.get("block_id", "")), "required_item": str(requirement.get("item_id", ""))})
+	return result
+
+
+func _clear_asset_ghost(reset_signature: bool = true) -> void:
+	if asset_ghost_root != null and is_instance_valid(asset_ghost_root): asset_ghost_root.queue_free()
+	asset_ghost_root = null
+	if reset_signature: asset_ghost_signature = ""
+
+
+func _micro_cell_mesh(cell) -> ArrayMesh:
+	if cell == null: return null
+	var cache_key: String = "micro:%s" % cell.content_hash()
+	if block_item_meshes.has(cache_key): return block_item_meshes[cache_key]
+	var workspace = StructureWorkspaceScript.new(block_defs)
+	var center: Vector3i = Vector3i(2, 2, 2); workspace.set_micro_cell(center, cell)
+	var built: Dictionary = VoxelSectionMesherScript.build(workspace.make_section_snapshot(Vector3i.ZERO), workspace.get_render_palette(), false)
+	var mesh: ArrayMesh = ArrayMesh.new()
+	for group_name in ["opaque", "cutout", "transparent"]:
+		for raw_surface in built.get(group_name, []) as Array:
+			var surface: Dictionary = raw_surface as Dictionary
+			var arrays: Array = (surface.get("arrays", []) as Array).duplicate(true)
+			var vertices: PackedVector3Array = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
+			for index in range(vertices.size()): vertices[index] -= Vector3(center)
+			arrays[Mesh.ARRAY_VERTEX] = vertices
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, _material_for_voxel_surface(surface))
+	block_item_meshes[cache_key] = mesh
+	return mesh
+
+
+func _asset_preview_mesh(template) -> ArrayMesh:
+	if template == null: return null
+	var cache_key: String = "asset:%s:%s" % [template.structure_id, template.content_hash()]
+	if block_item_meshes.has(cache_key): return block_item_meshes[cache_key]
+	var mesh: ArrayMesh = ArrayMesh.new()
+	for raw_cell in placed_assets.transformed_cells(template, Vector3i.ZERO, 0):
+		var cell: Dictionary = raw_cell as Dictionary
+		if str(cell.get("kind", "")) == "air": continue
+		var source: Mesh = _micro_cell_mesh(cell.get("cell", null)) if str(cell.get("kind", "")) == "micro" else _block_mesh(str(cell.get("block_id", "")))
+		if source != null: _append_mesh_surfaces(mesh, source, Vector3(cell.get("pos", Vector3i.ZERO)))
+	block_item_meshes[cache_key] = mesh
+	return mesh
+
+
+func _append_mesh_surfaces(target: ArrayMesh, source: Mesh, offset: Vector3) -> void:
+	for surface_index in range(source.get_surface_count()):
+		var arrays: Array = source.surface_get_arrays(surface_index)
+		var vertices: PackedVector3Array = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).duplicate()
+		for index in range(vertices.size()): vertices[index] += offset
+		arrays[Mesh.ARRAY_VERTEX] = vertices
+		target.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		target.surface_set_material(target.get_surface_count() - 1, source.surface_get_material(surface_index))
 	target_outline_pos = Vector3i(-999, -999, -999)
 
 func _make_target_outline_mesh() -> ArrayMesh:
@@ -3777,10 +3673,10 @@ func _tool_multiplier(tier: int, item_id: String) -> float:
 		mult += float(manita_pickaxe_level) * 0.5
 	return mult
 
-func _spawn_dropped_item(item_id: String, count: int, pos: Vector3, vel: Vector3) -> void:
+func _spawn_dropped_item(item_id: String, count: int, pos: Vector3, vel: Vector3, data: Dictionary = {}) -> void:
 	var item_node: DroppedItem = DroppedItem.new()
 	world_root.add_child(item_node)
-	item_node.configure(self, item_id, count, pos, vel)
+	item_node.configure(self, item_id, count, pos, vel, data)
 	dropped_items.append(item_node)
 
 func _drop_selected_item() -> void:
@@ -3796,7 +3692,8 @@ func _drop_selected_item() -> void:
 	var spawn_vel: Vector3 = forward * 4.5 + Vector3(0, 1.5, 0)
 	
 	# Spawn dropped item entity
-	_spawn_dropped_item(item_id, 1, spawn_pos, spawn_vel)
+	var selected_slot: Dictionary = inventory_slots[selected_hotbar_index]
+	_spawn_dropped_item(item_id, 1, spawn_pos, spawn_vel, selected_slot.get("data", {}) as Dictionary)
 	if player != null:
 		player.play_drop_swing()
 	
@@ -3867,6 +3764,13 @@ func _use_or_place_target() -> bool:
 		return false
 
 	var pos: Vector3i = hit.pos
+	if placed_assets != null:
+		var asset_interaction: Dictionary = placed_assets.interact_at(pos, player)
+		if bool(asset_interaction.get("handled", false)):
+			var interaction_message: String = str(asset_interaction.get("message", ""))
+			if interaction_message != "": _message(interaction_message)
+			if player != null: player.play_place_swing()
+			return true
 	var block_id: String = voxel_world.get_block_id(pos) if voxel_world != null else ""
 	var block_data: Dictionary = block_defs.get(block_id, {})
 	var interact: String = block_data.get("interact", "")
@@ -3890,6 +3794,37 @@ func _use_or_place_target() -> bool:
 	var normal: Vector3 = Vector3(hit.normal)
 	var offset: Vector3i = Vector3i(int(round(normal.x)), int(round(normal.y)), int(round(normal.z)))
 	var target_pos: Vector3i = pos + offset
+	var place_asset_id: String = str(item_data.get("place_asset", ""))
+	if place_asset_id != "":
+		var template = placed_assets.asset_for_item(place_asset_id)
+		var assembly_template = placed_assets.assembled_for_anchor_item(selected_item)
+		var item_rotation: int = placed_assets.assembled_anchor_piece_rotation(assembly_template, placement_rotation) if assembly_template != null else placement_rotation
+		var check: Dictionary = placed_assets.can_place(template, target_pos, item_rotation)
+		if not bool(check.get("ok", false)):
+			_message("Nao e possivel colocar aqui: %s." % str(check.get("reason", "posicao invalida"))); return false
+		if _asset_cells_overlap_player(check.get("cells", []) as Array):
+			_message("Nao da para colocar o asset dentro do jogador."); return false
+		var placed: Dictionary = placed_assets.place_atomic(place_asset_id, target_pos, item_rotation)
+		if not bool(placed.get("ok", false)): return false
+		for raw_cell_pos in placed.get("cells", []) as Array:
+			var placed_cell_pos: Vector3i = raw_cell_pos
+			_queue_voxel_sections_for_edit(placed_cell_pos); placed_assets.notify_world_changed(placed_cell_pos)
+		if assembly_template != null: placed_assets.begin_assembly(assembly_template.structure_id, target_pos, placement_rotation)
+		if not creative_mode: _remove_from_slot(inventory_slots, selected_hotbar_index, 1)
+		if player != null: player.play_place_swing()
+		_update_all_ui(); return true
+	if selected_item == "micro_pattern":
+		if voxel_world == null or voxel_world.has_block(target_pos) or not voxel_world.is_buildable(target_pos): return false
+		if _would_block_player(target_pos): _message("Nao da para colocar o padrao dentro do jogador."); return false
+		var selected_slot: Dictionary = inventory_slots[selected_hotbar_index]
+		var pattern_data: Dictionary = selected_slot.get("data", {}) as Dictionary
+		var cell = MicroCellScript.from_dictionary(pattern_data.get("cell", {}) as Dictionary, block_defs)
+		if cell == null: _message("Este padrao de microvoxels esta corrompido."); return false
+		if not voxel_world.set_micro_cell(target_pos, cell): return false
+		_queue_voxel_sections_for_edit(target_pos)
+		if not creative_mode: _remove_from_slot(inventory_slots, selected_hotbar_index, 1)
+		if player != null: player.play_place_swing()
+		_update_all_ui(); return true
 	if place_block == "":
 		_message("Item selecionado nao pode ser colocado.")
 		return false
@@ -3913,10 +3848,30 @@ func _use_or_place_target() -> bool:
 		_remove_from_slot(inventory_slots, selected_hotbar_index, 1)
 	if place_block == "chest":
 		_set_chest_inventory(target_pos, _make_slots(CHEST_SLOT_COUNT))
+	var anchor_template = placed_assets.assembled_for_anchor_item(selected_item) if placed_assets != null else null
+	if anchor_template != null:
+		var assembly_result: Dictionary = placed_assets.begin_assembly(anchor_template.structure_id, target_pos, placement_rotation)
+		if not bool(assembly_result.get("ok", false)): _message("Ancora colocada, mas a montagem conflita com outro asset.")
+	if placed_assets != null: placed_assets.notify_world_changed(target_pos)
 	if player != null:
 		player.play_place_swing()
 	_update_all_ui()
 	return true
+
+
+func _selected_placeable_asset():
+	if placed_assets == null: return null
+	var item_id: String = _get_selected_hotbar_item()
+	var assembled = placed_assets.assembled_for_anchor_item(item_id)
+	if assembled != null: return assembled
+	return placed_assets.asset_for_item(str((item_defs.get(item_id, {}) as Dictionary).get("place_asset", "")))
+
+
+func _asset_cells_overlap_player(cells: Array) -> bool:
+	for raw_cell in cells:
+		var cell: Dictionary = raw_cell as Dictionary
+		if str(cell.get("kind", "")) != "air" and _would_block_player(cell.get("pos", Vector3i.ZERO)): return true
+	return false
 
 func _get_target_block():
 	return cached_target
@@ -4546,6 +4501,22 @@ func _empty_slot() -> Dictionary:
 func _add_item(item_id: String, count: int) -> bool:
 	return _add_item_to_slots(inventory_slots, item_id, count)
 
+
+func _add_item_slot(raw_slot: Dictionary) -> bool:
+	var item_id: String = _slot_item(raw_slot)
+	var count: int = _slot_count(raw_slot)
+	var data: Dictionary = raw_slot.get("data", {}) as Dictionary
+	if data.is_empty(): return _add_item(item_id, count)
+	for index in range(inventory_slots.size()):
+		var slot: Dictionary = inventory_slots[index]
+		if _slot_item(slot) == item_id and (slot.get("data", {}) as Dictionary) == data:
+			slot["count"] = _slot_count(slot) + count; inventory_slots[index] = slot; return true
+	for index in range(inventory_slots.size()):
+		if _slot_item(inventory_slots[index] as Dictionary) == "":
+			inventory_slots[index] = {"item": item_id, "count": count, "data": data.duplicate(true)}; return true
+	_message("Inventario cheio: %s ficou no chao por enquanto." % _item_name(item_id))
+	return false
+
 func _add_item_to_slots(slots: Array, item_id: String, count: int) -> bool:
 	if item_id == "" or count <= 0:
 		return true
@@ -4626,11 +4597,12 @@ func _save_game_state() -> bool:
 	_cancel_slot_drags()
 
 	var save_data: Dictionary = {
-		"format": "trumancraft_save_v4",
-		"version": 4,
+		"format": "weedcraft_save_v5",
+		"version": 5,
 		"terrain_hash": active_terrain_hash,
 		"structure_registry_hash": active_registry_hash,
 		"world": voxel_world.build_save_data(),
+		"placed_assets": placed_assets.build_save_data() if placed_assets != null else [],
 		"player_position": _vector3_to_array(player.global_position),
 		"player_rotation_y": player.get_camera_yaw(),
 		"camera_pitch": player.get_camera_pitch(),
@@ -4658,10 +4630,9 @@ func _save_game_state() -> bool:
 func _load_game_state() -> bool:
 	last_load_error = ""
 	if voxel_world == null:
-		last_load_error = "O mundo base V3 nao foi inicializado."
+		last_load_error = "O mundo base V5 nao foi inicializado."
 		return false
-	var load_path: String = SAVE_PATH if FileAccess.file_exists(SAVE_PATH) else V3_SAVE_PATH
-	var file: FileAccess = FileAccess.open(load_path, FileAccess.READ)
+	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.READ)
 	if file == null:
 		last_load_error = "Nao foi possivel abrir o save."
 		return false
@@ -4679,8 +4650,8 @@ func _load_game_state() -> bool:
 	var data: Dictionary = raw_data as Dictionary
 	var format: String = str(data.get("format", ""))
 	var version: int = int(data.get("version", 0))
-	if not ((format == "trumancraft_save_v4" and version == 4) or (format == "trumancraft_save_v3" and version == 3)):
-		last_load_error = "Save incompativel: somente mundos V3 ou V4 podem ser carregados."
+	if format != "weedcraft_save_v5" or version != 5:
+		last_load_error = "Save incompativel: somente mundos WEEDCRAFT V5 podem ser carregados."
 		return false
 	if str(data.get("terrain_hash", "")) != active_terrain_hash or str(data.get("structure_registry_hash", "")) != active_registry_hash:
 		last_load_error = "Save incompativel com os tiles ou templates de geracao atuais."
@@ -4688,6 +4659,9 @@ func _load_game_state() -> bool:
 	var raw_world: Variant = data.get("world", {})
 	if typeof(raw_world) != TYPE_DICTIONARY or not voxel_world.load_save_data(raw_world as Dictionary):
 		last_load_error = "Dados voxel do save sao invalidos ou usam outra paleta."
+		return false
+	if placed_assets != null and (typeof(data.get("placed_assets", [])) != TYPE_ARRAY or not placed_assets.load_save_data(data.get("placed_assets", []) as Array)):
+		last_load_error = "Instancias de Custom Blocks ou multiblocos sao invalidas."
 		return false
 
 	voxel_world.set_tracking_changes(false)
@@ -4778,7 +4752,12 @@ func _slots_from_data(raw_value: Variant, slot_count: int) -> Array:
 		var item_id: String = str(slot_data.get("item", ""))
 		var item_count: int = int(slot_data.get("count", 0))
 		if item_defs.has(item_id) and item_count > 0:
-			slots[i] = {"item": item_id, "count": item_count}
+			var restored_slot: Dictionary = {"item": item_id, "count": item_count}
+			if typeof(slot_data.get("data", null)) == TYPE_DICTIONARY:
+				var custom_data: Dictionary = (slot_data.get("data", {}) as Dictionary).duplicate(true)
+				if item_id != "micro_pattern" or MicroCellScript.from_dictionary(custom_data.get("cell", {}) as Dictionary, block_defs) != null:
+					restored_slot["data"] = custom_data
+			slots[i] = restored_slot
 	return slots
 
 func _vector3_to_array(value: Vector3) -> Array:
@@ -4807,16 +4786,20 @@ func _sync_held_item(force: bool = false) -> void:
 	if player == null:
 		return
 	var selected_item: String = _get_selected_hotbar_item()
-	var signature: String = selected_item
+	var selected_slot: Dictionary = inventory_slots[selected_hotbar_index] if selected_hotbar_index >= 0 and selected_hotbar_index < inventory_slots.size() else {}
+	var signature: String = "%s:%s" % [selected_item, str((selected_slot.get("data", {}) as Dictionary).get("hash", ""))]
 	if not force and signature == held_item_signature:
 		return
 	var icon: Texture2D = _item_icon(selected_item)
-	var block_mesh: Mesh = null
+	var block_mesh: Mesh = _item_mesh(selected_item)
 	var cube_faces: Dictionary = {}
+	if selected_item == "micro_pattern":
+		var pattern_cell = MicroCellScript.from_dictionary(((selected_slot.get("data", {}) as Dictionary).get("cell", {}) as Dictionary), block_defs)
+		if pattern_cell != null: block_mesh = _micro_cell_mesh(pattern_cell)
 	if selected_item != "":
 		var item_data: Dictionary = item_defs.get(selected_item, {})
 		var place_block: String = str(item_data.get("place_block", ""))
-		if place_block != "" and block_defs.has(place_block):
+		if block_mesh == null and place_block != "" and block_defs.has(place_block):
 			var block_data: Dictionary = block_defs[place_block]
 			if not bool(block_data.get("plant", false)):
 				block_mesh = _block_mesh(place_block)
@@ -4879,7 +4862,8 @@ func _update_cursor_stack_label() -> void:
 			_item_icon(item_id),
 			_item_icon_faces(item_id),
 			Vector2(58, 58),
-			false
+			false,
+			_item_mesh(item_id, cursor_stack.get("data", {}) as Dictionary)
 		)
 		cursor_stack_signature = signature
 	cursor_stack_slot.visible = game_started and not _is_menu_open()
@@ -4944,7 +4928,9 @@ func _update_hotbar() -> void:
 			_item_description(item_id),
 			_item_icon(item_id),
 			_item_icon_faces(item_id),
-			Vector2(54, 54)
+			Vector2(54, 54),
+			true,
+			_item_mesh(item_id, slot.get("data", {}) as Dictionary)
 		)
 		slot_node.set_selected(i == selected_hotbar_index)
 	_sync_held_item()
@@ -4999,7 +4985,9 @@ func _make_item_slot(slot_type: String, slot_index: int, slot: Dictionary, slot_
 		_item_description(item_id),
 		_item_icon(item_id),
 		_item_icon_faces(item_id),
-		slot_size
+		slot_size,
+		true,
+		_item_mesh(item_id, slot.get("data", {}) as Dictionary)
 	)
 	return node
 

@@ -70,8 +70,9 @@ func _carve_ellipsoid(world, tile, local_center: Vector3, radius: float, vertica
 					continue
 				if not allowed_columns.is_empty() and not allowed_columns.has(column_index):
 					continue
-				if tile.has_zone_flag(local_x, local_z, TerrainTileScript.ZONE_PROTECTED):
-					continue
+				# ZONE_PROTECTED is a surface/editor reservation. Applying it to every
+				# Y would turn that 2D mask into an underground wall and sever authored
+				# cave networks that legitimately pass below the protected area.
 				var normalized: float = sqrt(pow(float(dx) / radius, 2.0) + pow(float(dy) / y_radius, 2.0) + pow(float(dz) / radius, 2.0))
 				var density: float = float(tile.get_cave_density(local_x, local_z)) / 255.0
 				var wall_noise: float = (_hash01(local_x, local_y, local_z, seed + 941) - 0.5) * density * 0.22

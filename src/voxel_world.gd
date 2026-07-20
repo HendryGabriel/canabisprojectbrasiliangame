@@ -8,6 +8,7 @@ extends RefCounted
 
 
 const VoxelHitScript = preload("res://src/voxel_hit.gd")
+const MicroCellScript = preload("res://src/micro_cell_data.gd")
 
 const WORLD_WIDTH: int = 200
 const WORLD_DEPTH: int = 200
@@ -23,8 +24,8 @@ const SECTION_COUNT_X: int = 13 # ceil(200 / 16)
 const SECTION_COUNT_Y: int = 12 # 192 / 16
 const SECTION_COUNT_Z: int = 13 # ceil(200 / 16)
 
-const SAVE_FORMAT: String = "finite_voxel_v3"
-const SAVE_VERSION: int = 3
+const SAVE_FORMAT: String = "finite_voxel_v4"
+const SAVE_VERSION: int = 4
 ## Bump only when the stable byte palette layout changes incompatibly.
 const PALETTE_VERSION: int = 1
 ## Never reorder existing values. New catalog entries are appended after this
@@ -48,6 +49,8 @@ var _render_palette: Dictionary = {}
 var _section_revisions: Dictionary = {}
 var _section_nonempty_counts: Dictionary = {}
 var _changed_voxels: Dictionary = {} # linear index -> palette id (0 is removal)
+var _micro_cells: Dictionary = {} # linear index -> MicroCellData
+var _changed_micro_cells: Dictionary = {} # linear index -> MicroCellData or null removal
 ## Sparse state for chests and future stateful blocks, keyed by linear voxel
 ## index. It is intentionally separate from the dense palette byte grid.
 var _metadata: Dictionary = {}
@@ -109,6 +112,8 @@ func reset(seed: int = 0) -> void:
 	_section_revisions.clear()
 	_section_nonempty_counts.clear()
 	_changed_voxels.clear()
+	_micro_cells.clear()
+	_changed_micro_cells.clear()
 	_metadata.clear()
 	_tracking_changes = false
 
@@ -121,6 +126,10 @@ func get_voxel_hash() -> String:
 	var context: HashingContext = HashingContext.new()
 	context.start(HashingContext.HASH_SHA256)
 	context.update(_voxels.to_byte_array())
+	var micro_indices: Array = _micro_cells.keys()
+	micro_indices.sort()
+	for raw_index in micro_indices:
+		context.update(("%d:%s;" % [int(raw_index), _micro_cells[raw_index].content_hash()]).to_utf8_buffer())
 	return context.finish().hex_encode()
 
 
@@ -191,7 +200,27 @@ func get_block_id(pos: Vector3i) -> String:
 
 
 func has_block(pos: Vector3i) -> bool:
-	return get_block_palette_id(pos) != 0
+	return get_block_palette_id(pos) != 0 or has_micro_cell(pos)
+
+
+func has_micro_cell(pos: Vector3i) -> bool:
+	var index: int = get_linear_index(pos)
+	return index >= 0 and _micro_cells.has(index)
+
+
+func get_micro_cell(pos: Vector3i):
+	var index: int = get_linear_index(pos)
+	return _micro_cells[index] if index >= 0 and _micro_cells.has(index) else null
+
+
+func set_base_micro_cell(pos: Vector3i, cell) -> bool:
+	return _set_micro_cell_internal(pos, cell, false)
+
+
+func set_micro_cell(pos: Vector3i, cell) -> bool:
+	if not is_buildable(pos):
+		return false
+	return _set_micro_cell_internal(pos, cell, true)
 
 
 func get_definition(block_id: String) -> Dictionary:
@@ -220,9 +249,11 @@ func clear_base_block(pos: Vector3i) -> bool:
 	if not is_inside_world(pos):
 		return false
 	var index: int = get_linear_index(pos)
-	if int(_voxels[index]) == 0:
+	if int(_voxels[index]) == 0 and not _micro_cells.has(index):
 		return false
-	_set_palette_id(pos, 0, false)
+	if int(_voxels[index]) != 0:
+		_set_palette_id(pos, 0, false)
+	_clear_micro_cell(pos, false)
 	_metadata.erase(index)
 	return true
 
@@ -237,9 +268,11 @@ func remove_block(pos: Vector3i) -> bool:
 	if not is_buildable(pos):
 		return false
 	var index: int = get_linear_index(pos)
-	if int(_voxels[index]) == 0:
+	if int(_voxels[index]) == 0 and not _micro_cells.has(index):
 		return false
-	_set_palette_id(pos, 0, true)
+	if int(_voxels[index]) != 0:
+		_set_palette_id(pos, 0, true)
+	_clear_micro_cell(pos, true)
 	_metadata.erase(index)
 	return true
 
@@ -311,6 +344,7 @@ func get_metadata_positions(key: String) -> Array:
 
 func clear_changes() -> void:
 	_changed_voxels.clear()
+	_changed_micro_cells.clear()
 
 
 func export_changes() -> Array:
@@ -366,6 +400,38 @@ func apply_changes_as_base(raw_changes: Variant) -> bool:
 	return true
 
 
+func export_micro_changes() -> Array:
+	var result: Array = []
+	var indices: Array = _changed_micro_cells.keys()
+	indices.sort()
+	for raw_index in indices:
+		var cell = _changed_micro_cells[raw_index]
+		result.append([int(raw_index), null if cell == null else cell.to_dictionary()])
+	return result
+
+
+func import_micro_changes(raw_changes: Variant) -> bool:
+	if typeof(raw_changes) != TYPE_ARRAY:
+		return false
+	for raw_entry in raw_changes as Array:
+		if typeof(raw_entry) != TYPE_ARRAY or (raw_entry as Array).size() != 2:
+			continue
+		var entry: Array = raw_entry as Array
+		var index: int = int(entry[0])
+		if index < 0 or index >= WORLD_VOLUME:
+			continue
+		var pos: Vector3i = get_position_from_index(index)
+		if entry[1] == null:
+			_clear_micro_cell(pos, false)
+			_changed_micro_cells[index] = null
+		elif typeof(entry[1]) == TYPE_DICTIONARY:
+			var cell = MicroCellScript.from_dictionary(entry[1] as Dictionary, _block_defs)
+			if cell != null:
+				_set_micro_cell_internal(pos, cell, false)
+				_changed_micro_cells[index] = cell.duplicate_cell()
+	return true
+
+
 func export_metadata() -> Array:
 	var result: Array = []
 	var indices: Array = _metadata.keys()
@@ -406,6 +472,7 @@ func build_save_data() -> Dictionary:
 		"min_y": WORLD_MIN_Y,
 		"max_y": WORLD_MAX_Y,
 		"changes": export_changes(),
+		"micro_changes": export_micro_changes(),
 		"metadata": export_metadata(),
 	}
 
@@ -421,8 +488,11 @@ func load_save_data(data: Dictionary) -> bool:
 		return false
 	_seed = int(data.get("seed", _seed))
 	_changed_voxels.clear()
+	_changed_micro_cells.clear()
 	_metadata.clear()
 	if not import_changes(data.get("changes", [])):
+		return false
+	if not import_micro_changes(data.get("micro_changes", [])):
 		return false
 	return import_metadata(data.get("metadata", []))
 
@@ -464,6 +534,10 @@ func get_nonempty_sections() -> Array:
 	for raw_section in _section_nonempty_counts.keys():
 		if int(_section_nonempty_counts[raw_section]) > 0:
 			sections.append(raw_section)
+	for raw_index in _micro_cells.keys():
+		var section: Vector3i = get_section_coord(get_position_from_index(int(raw_index)))
+		if not sections.has(section):
+			sections.append(section)
 	return sections
 
 
@@ -479,12 +553,18 @@ func make_section_snapshot(section: Vector3i) -> Dictionary:
 			for local_x in range(-1, SECTION_SIZE + 1):
 				padded[cursor] = get_block_palette_id(origin + Vector3i(local_x, local_y, local_z))
 				cursor += 1
+	var micro_rows: Array = []
+	for raw_index in _micro_cells.keys():
+		var local_pos: Vector3i = get_position_from_index(int(raw_index)) - origin
+		if local_pos.x >= -1 and local_pos.x <= SECTION_SIZE and local_pos.y >= -1 and local_pos.y <= SECTION_SIZE and local_pos.z >= -1 and local_pos.z <= SECTION_SIZE:
+			micro_rows.append([local_pos.x, local_pos.y, local_pos.z, _micro_cells[raw_index].to_dictionary()])
 	return {
 		"section": section,
 		"origin": origin,
 		"size": SECTION_SIZE,
 		"padded_size": PADDED_SECTION_SIZE,
 		"voxels": padded,
+		"micro_cells": micro_rows,
 		"revision": get_section_revision(section),
 	}
 
@@ -543,6 +623,11 @@ func raycast_hit(ray_origin: Vector3, ray_direction: Vector3, max_distance: floa
 			var block_id: String = get_block_id(cell)
 			if block_id != "":
 				return VoxelHitScript.new(cell, normal, block_id, distance_travelled)
+			if has_micro_cell(cell):
+				var exit_distance: float = minf(t_max.x, minf(t_max.y, t_max.z))
+				var micro_hit = _raycast_micro_interval(ray_origin, direction, cell, distance_travelled, minf(exit_distance, max_distance))
+				if micro_hit != null:
+					return micro_hit
 		elif distance_travelled > 0.0:
 			return null
 		if t_max.x <= t_max.y and t_max.x <= t_max.z:
@@ -579,7 +664,77 @@ func _set_block_internal(pos: Vector3i, block_id: String, record_change: bool) -
 	if int(_voxels[index]) == palette_id:
 		return false
 	_set_palette_id(pos, palette_id, record_change)
+	_clear_micro_cell(pos, record_change)
 	return true
+
+
+func _set_micro_cell_internal(pos: Vector3i, cell, record_change: bool) -> bool:
+	if not is_inside_world(pos) or cell == null:
+		return false
+	if cell.is_empty():
+		return _clear_micro_cell(pos, record_change)
+	var full_material: String = cell.normalizable_material()
+	if full_material != "":
+		return _set_block_internal(pos, full_material, record_change)
+	var index: int = get_linear_index(pos)
+	if _micro_cells.has(index) and _micro_cells[index].content_hash() == cell.content_hash():
+		return false
+	if int(_voxels[index]) != 0:
+		_set_palette_id(pos, 0, record_change)
+	_micro_cells[index] = cell.duplicate_cell()
+	if record_change and _tracking_changes:
+		_changed_micro_cells[index] = cell.duplicate_cell()
+	_touch_position(pos)
+	return true
+
+
+func _clear_micro_cell(pos: Vector3i, record_change: bool) -> bool:
+	var index: int = get_linear_index(pos)
+	if index < 0 or not _micro_cells.has(index):
+		return false
+	_micro_cells.erase(index)
+	if record_change and _tracking_changes:
+		_changed_micro_cells[index] = null
+	_touch_position(pos)
+	return true
+
+
+func _touch_position(pos: Vector3i) -> void:
+	for affected_section in get_affected_sections(pos):
+		_section_revisions[affected_section] = get_section_revision(affected_section) + 1
+
+
+func _raycast_micro_interval(ray_origin: Vector3, direction: Vector3, base_pos: Vector3i, start_distance: float, end_distance: float):
+	var epsilon: float = 0.00001
+	var scaled_origin: Vector3 = (ray_origin + Vector3(0.5, 0.5, 0.5)) * float(MicroCellScript.SIZE)
+	var scaled_direction: Vector3 = direction * float(MicroCellScript.SIZE)
+	var distance: float = maxf(0.0, start_distance) + epsilon
+	var point: Vector3 = scaled_origin + scaled_direction * distance
+	var micro_global: Vector3i = Vector3i(floori(point.x), floori(point.y), floori(point.z))
+	var step: Vector3i = Vector3i(_sign_i(scaled_direction.x), _sign_i(scaled_direction.y), _sign_i(scaled_direction.z))
+	var delta: Vector3 = Vector3(_axis_delta(scaled_direction.x), _axis_delta(scaled_direction.y), _axis_delta(scaled_direction.z))
+	var maximum: Vector3 = Vector3(
+		distance + _axis_max(point.x, scaled_direction.x, micro_global.x, step.x),
+		distance + _axis_max(point.y, scaled_direction.y, micro_global.y, step.y),
+		distance + _axis_max(point.z, scaled_direction.z, micro_global.z, step.z)
+	)
+	var normal: Vector3i = Vector3i.ZERO
+	var cell_data = get_micro_cell(base_pos)
+	for _index in range(64):
+		var owner: Vector3i = Vector3i(floori(float(micro_global.x) / 8.0), floori(float(micro_global.y) / 8.0), floori(float(micro_global.z) / 8.0))
+		if owner != base_pos or distance > end_distance + epsilon:
+			break
+		var local: Vector3i = Vector3i(posmod(micro_global.x, 8), posmod(micro_global.y, 8), posmod(micro_global.z, 8))
+		var material_id: String = cell_data.get_material(local)
+		if material_id != "":
+			return VoxelHitScript.new(base_pos, normal, material_id, distance, local, true)
+		if maximum.x <= maximum.y and maximum.x <= maximum.z:
+			distance = maximum.x; maximum.x += delta.x; micro_global.x += step.x; normal = Vector3i(-step.x, 0, 0)
+		elif maximum.y <= maximum.z:
+			distance = maximum.y; maximum.y += delta.y; micro_global.y += step.y; normal = Vector3i(0, -step.y, 0)
+		else:
+			distance = maximum.z; maximum.z += delta.z; micro_global.z += step.z; normal = Vector3i(0, 0, -step.z)
+	return null
 
 
 func _set_palette_id(pos: Vector3i, palette_id: int, record_change: bool) -> void:

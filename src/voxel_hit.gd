@@ -7,6 +7,8 @@ var pos: Vector3i
 var normal: Vector3i
 var block_id: String
 var distance: float
+var micro_pos: Vector3i
+var is_micro: bool
 
 
 func _init(
@@ -14,11 +16,15 @@ func _init(
 	p_normal: Vector3i = Vector3i.ZERO,
 	p_block_id: String = "",
 	p_distance: float = 0.0,
+	p_micro_pos: Vector3i = Vector3i.ZERO,
+	p_is_micro: bool = false,
 ) -> void:
 	pos = p_pos
 	normal = p_normal
 	block_id = p_block_id
 	distance = p_distance
+	micro_pos = p_micro_pos
+	is_micro = p_is_micro
 
 
 func is_valid() -> bool:
@@ -31,4 +37,6 @@ func to_dictionary() -> Dictionary:
 		"normal": normal,
 		"block_id": block_id,
 		"distance": distance,
+		"micro_pos": micro_pos,
+		"is_micro": is_micro,
 	}

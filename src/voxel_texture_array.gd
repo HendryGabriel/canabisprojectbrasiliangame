@@ -33,8 +33,13 @@ func build(block_definitions: Dictionary) -> bool:
 		if texture == null:
 			return false
 		var image: Image = texture.get_image()
-		if image == null or image.get_width() != 16 or image.get_height() != 16:
+		if image == null or image.get_width() != 16 or image.get_height() < 16:
 			return false
+		# Animated Minecraft textures are vertical 16xN strips. The voxel
+		# texture array stores one tile per block face, so use the first frame
+		# instead of stretching the full strip over the face.
+		if image.get_height() != 16:
+			image = image.get_region(Rect2i(0, 0, 16, 16))
 		# Imported PNGs can have different internal formats even at the same
 		# dimensions. Texture2DArray requires every layer to share one format.
 		image = image.duplicate()

@@ -1,18 +1,24 @@
 extends Control
 class_name ItemSlot
 
+const UIStyleScript = preload("res://src/ui_style.gd")
+
 var controller: Node
 var slot_type: String = ""
 var slot_index: int = -1
 var item_id: String = ""
 var item_count: int = 0
+var count_text_override: String = ""
 var item_label: String = ""
 var item_description: String = ""
 var item_icon: Texture2D
 var cube_faces: Dictionary = {}
+var item_mesh: Mesh
 var selected: bool = false
 var interactive: bool = true
 var hovered: bool = false
+var ghost: bool = false
+var visual_kind: String = "stone"
 
 var flat_icon: TextureRect
 var count_label: Label
@@ -38,9 +44,10 @@ func configure(
 	p_item_icon: Texture2D,
 	p_cube_faces: Dictionary,
 	p_size: Vector2 = Vector2(72, 54),
-	p_interactive: bool = true
+	p_interactive: bool = true,
+	p_item_mesh: Mesh = null
 ) -> void:
-	var cube_preview_changed: bool = _cube_preview_signature_for(p_cube_faces, p_item_icon) != preview_scene_signature
+	var cube_preview_changed: bool = _preview_signature_for(p_cube_faces, p_item_icon, p_item_mesh) != preview_scene_signature
 	controller = p_controller
 	slot_type = p_slot_type
 	slot_index = p_slot_index
@@ -50,7 +57,10 @@ func configure(
 	item_description = p_item_description
 	item_icon = p_item_icon
 	cube_faces = p_cube_faces
+	item_mesh = p_item_mesh
 	interactive = p_interactive
+	ghost = false
+	modulate = Color.WHITE
 	custom_minimum_size = p_size
 	mouse_filter = Control.MOUSE_FILTER_STOP if interactive else Control.MOUSE_FILTER_IGNORE
 	focus_mode = Control.FOCUS_NONE
@@ -61,6 +71,20 @@ func configure(
 func set_selected(value: bool) -> void:
 	selected = value
 	queue_redraw()
+
+func set_visual_kind(value: String) -> void:
+	visual_kind = value
+	queue_redraw()
+
+func set_ghost(value: bool) -> void:
+	ghost = value
+	modulate = Color(1.0, 1.0, 1.0, 0.42) if value else Color.WHITE
+	queue_redraw()
+
+func set_count_text_override(value: String) -> void:
+	count_text_override = value
+	if count_label != null:
+		count_label.text = value if value != "" else (str(item_count) if item_count > 1 else "")
 
 func _gui_input(event: InputEvent) -> void:
 	if not interactive or controller == null:
@@ -96,12 +120,15 @@ func _notification(what: int) -> void:
 
 func _draw() -> void:
 	var rect: Rect2 = Rect2(Vector2.ZERO, size)
-	draw_rect(rect, Color(0.12, 0.12, 0.12, 0.96), true)
-	draw_rect(rect.grow(-1), Color(0.23, 0.23, 0.23, 1.0), false, 1.0)
+	if slot_type == "cursor":
+		return
+	var colors: Array[Color] = UIStyleScript.slot_colors(visual_kind)
+	draw_rect(rect, colors[0], true)
+	draw_rect(rect.grow(-1), colors[1], false, 2.0)
 	if selected:
-		draw_rect(rect.grow(-2), Color(1.0, 1.0, 1.0, 0.9), false, 2.0)
+		draw_rect(rect.grow(-3), colors[2], false, 3.0)
 	if hovered:
-		draw_rect(rect.grow(-1), Color(1.0, 1.0, 1.0, 0.15), true)
+		draw_rect(rect.grow(-2), Color(colors[2], 0.20), true)
 
 func _ensure_children() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -150,7 +177,7 @@ func _update_visual(force_cube_preview_refresh: bool = false) -> void:
 		queue_redraw()
 		return
 
-	if cube_faces.size() > 0:
+	if item_mesh != null or cube_faces.size() > 0:
 		flat_icon.visible = false
 		viewport_container.visible = true
 		if _update_cube_preview_if_needed():
@@ -160,7 +187,7 @@ func _update_visual(force_cube_preview_refresh: bool = false) -> void:
 		flat_icon.visible = true
 		flat_icon.texture = item_icon
 
-	count_label.text = str(item_count) if item_count > 1 else ""
+	count_label.text = count_text_override if count_text_override != "" else (str(item_count) if item_count > 1 else "")
 	_position_children()
 	if force_cube_preview_refresh:
 		request_preview_update()
@@ -170,9 +197,9 @@ func _position_children() -> void:
 	var slot_size: Vector2 = size
 	if slot_size.x <= 0 or slot_size.y <= 0:
 		slot_size = custom_minimum_size
-	var padding: float = 7.0
+	var padding: float = 2.0
 	var max_icon_edge: float = min(slot_size.x, slot_size.y) - padding * 2.0
-	var icon_edge: float = max(16.0, floor(max_icon_edge / 16.0) * 16.0)
+	var icon_edge: float = clampf(max_icon_edge, 16.0, 40.0)
 	var icon_size: Vector2 = Vector2(icon_edge, icon_edge)
 	var icon_position: Vector2 = (slot_size - icon_size) * 0.5
 	flat_icon.position = icon_position
@@ -191,16 +218,16 @@ func _position_children() -> void:
 func request_preview_update() -> void:
 	if not is_node_ready() or block_viewport == null or viewport_container == null:
 		return
-	if not viewport_container.visible or cube_faces.is_empty():
+	if not viewport_container.visible or (item_mesh == null and cube_faces.is_empty()):
 		return
 	block_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 func _update_cube_preview_if_needed() -> bool:
-	var signature: String = _cube_preview_signature_for(cube_faces, item_icon)
+	var signature: String = _preview_signature_for(cube_faces, item_icon, item_mesh)
 	_ensure_block_preview_scene()
 	if signature == preview_scene_signature and preview_mesh_instance.mesh != null:
 		return false
-	preview_mesh_instance.mesh = _build_cube_mesh()
+	preview_mesh_instance.mesh = item_mesh if item_mesh != null else _build_cube_mesh()
 	preview_scene_signature = signature
 	return true
 
@@ -244,6 +271,10 @@ func _cube_preview_signature_for(p_cube_faces: Dictionary, p_item_icon: Texture2
 		var texture: Texture2D = _texture_for_face_data(face_name, p_cube_faces, p_item_icon)
 		face_signatures.append(str(texture.get_instance_id()) if texture != null else "0")
 	return "|".join(face_signatures)
+
+
+func _preview_signature_for(p_cube_faces: Dictionary, p_item_icon: Texture2D, p_item_mesh: Mesh) -> String:
+	return "mesh:%d" % p_item_mesh.get_instance_id() if p_item_mesh != null else _cube_preview_signature_for(p_cube_faces, p_item_icon)
 
 func _build_cube_mesh() -> ArrayMesh:
 	var mesh: ArrayMesh = ArrayMesh.new()

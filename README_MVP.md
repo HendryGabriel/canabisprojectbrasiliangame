@@ -1,12 +1,12 @@
-# TRUMANCRAFT MVP
+# WEEDCRAFT MVP
 
-Este MVP cria uma base jogavel em Godot 4.x para continuar o desenvolvimento do TRUMANCRAFT, agora focado no Bioma 1/4 do mapa final.
+Este MVP cria a base jogável 3D voxel do WEEDCRAFT, incluindo autoria de estruturas, Custom Blocks e máquinas multibloco.
 
 ## Como abrir
 
 1. Abra o Godot 4.x.
 2. Escolha "Importar" ou "Abrir projeto".
-3. Selecione a pasta `D:\JOGOS\TRUMANCRAFT`.
+3. Selecione a pasta `D:\JOGOS\WEEDCRAFT`.
 4. Rode a cena principal.
 
 ## Controles
@@ -34,7 +34,7 @@ Este MVP cria uma base jogavel em Godot 4.x para continuar o desenvolvimento do 
 
 - O jogo abre no menu inicial.
 - `Novo Jogo`: reinicia o Bioma 1 do zero.
-- `Continuar`: carrega `user://savegame.json`, quando existir.
+- `Continuar`: carrega exclusivamente `user://weedcraft_save_v5.json`; saves antigos não são migrados.
 - Menu de pausa: `Voltar ao jogo`, `Salvar`, `Opcoes` e `Menu inicial`.
 - Opcoes: alterna tela cheia e sombras.
 - O save guarda posicao do jogador, inventario, hotbar selecionada, mana, XP da Picareta de Manita, blocos alterados/removidos e conteudo dos baus.
@@ -67,6 +67,16 @@ Este MVP cria uma base jogavel em Godot 4.x para continuar o desenvolvimento do 
 - Picareta de Manita com custo de mana e XP por uso.
 - Pulo ajustado para subir um bloco.
 - E possivel pular e colocar bloco diretamente abaixo para subir em torre.
+
+## Estruturas, microvoxels e multiblocos V4
+
+- O Estúdio começa no void com um bloco-guia ignorado até ser substituído e reutiliza a gameplay com voo criativo e inventário infinito.
+- `Tab` abre as ferramentas e permite alternar entre `1x`, `1/2`, `1/4` e `1/8` na mesma grade interna `8x8x8`.
+- O botão do meio copia uma formação completa de microvoxels para a hotbar e para a mão.
+- A exportação oferece `Custom Block`, `Multiblock` atômico ou montável e `Estrutura` de geração.
+- Custom Blocks e multiblocos usam ghost 3D, giram com `R`, validam o volume inteiro e preservam componentes referenciados.
+- Montagens usam peça-âncora, mostram requisitos ausentes e só ativam a `utility_id` com peças e rotações corretas.
+- Estruturas de geração alteram apenas o volume 3D autorado e não preenchem colunas acima ou abaixo.
 
 ## Receitas do MVP
 

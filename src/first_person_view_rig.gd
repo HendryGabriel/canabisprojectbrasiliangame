@@ -145,6 +145,15 @@ func _rebuild_item_visual() -> void:
 		arm_mesh.visible = item_id == ""
 	if item_id == "":
 		return
+	if item_block_mesh != null and item_cube_faces.is_empty():
+		var pattern: MeshInstance3D = MeshInstance3D.new()
+		pattern.mesh = item_block_mesh
+		pattern.scale = Vector3(0.32, 0.32, 0.32)
+		pattern.rotation_degrees = Vector3(18, 36, 0)
+		pattern.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		current_item_visual = pattern
+		item_root.add_child(pattern)
+		return
 	if item_cube_faces.size() > 0:
 		var block: MeshInstance3D = MeshInstance3D.new()
 		block.mesh = _build_cube_mesh()
